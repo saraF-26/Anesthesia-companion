@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import ORRoom from "../components/ORRoom";
 
 type Step = "brief" | "preop" | "monitoring" | "drugs" | "airway" | "machine" | "done";
 
@@ -166,77 +167,7 @@ function Cases() {
 
       </section>
 
-      <section className="relative min-h-[720px] rounded-[2rem] border border-slate-800 overflow-hidden bg-[#d8e6ef] mb-6 shadow-2xl">
-        {/* OR Background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#d9e7f0] via-[#c8d8e3] to-[#aebfca]" />
-
-        <div
-          className="absolute inset-0 opacity-30"
-          style={{
-            backgroundImage:
-              "linear-gradient(#ffffff 2px, transparent 2px), linear-gradient(90deg,#ffffff 2px,transparent 2px)",
-            backgroundSize: "90px 90px",
-          }}
-        />
-
-        <div className="absolute left-0 right-0 top-0 h-24 bg-gradient-to-b from-[#8fa9bb] to-transparent" />
-        <div className="absolute left-0 right-0 bottom-0 h-28 bg-gradient-to-t from-[#7f94a3] to-transparent" />
-
-        {/* Ceiling surgical light */}
-        <div className="absolute left-1/2 top-8 -translate-x-1/2 z-10">
-          <div className="w-8 h-24 mx-auto bg-slate-500 rounded-full" />
-          <div className="w-72 h-24 rounded-[50%] bg-slate-300 border-4 border-slate-500 shadow-2xl flex items-center justify-center -mt-2">
-            <div className="grid grid-cols-4 gap-3">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="w-9 h-7 rounded-full bg-yellow-100 shadow-[0_0_20px_rgba(254,240,138,.9)]" />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Patient Monitor */}
-        <div className="absolute left-5 top-5 w-[300px] rounded-3xl border border-cyan-500/50 bg-black/80 p-4 z-20 shadow-2xl">
-          <h3 className="font-black mb-3">Patient Monitor</h3>
-          <div className="h-14 rounded-xl bg-[repeating-linear-gradient(90deg,#22c55e_0_8px,transparent_8px_18px)] opacity-80 mb-3" />
-          <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono">
-            <span>HR {vitals.hr}</span>
-            <span>SpO₂ {vitals.spo2}</span>
-            <span>BP {vitals.bp}</span>
-            <span>EtCO₂ {vitals.etco2}</span>
-          </div>
-        </div>
-
-        <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 text-center">
-          <div className="text-6xl drop-shadow-[0_0_25px_#38bdf8] mb-2">✦</div>
-          <div className="relative mx-auto w-[150px] h-[250px]">
-            <div className="mx-auto w-16 h-16 rounded-full bg-[#f2c49f]" />
-            <div className="mx-auto mt-2 w-32 h-40 rounded-full bg-gradient-to-b from-blue-200 to-blue-900" />
-            <div className="absolute -left-8 top-24 w-10 h-28 rounded-full bg-blue-100 rotate-12" />
-            <div className="absolute -right-8 top-24 w-10 h-28 rounded-full bg-blue-100 -rotate-12" />
-          </div>
-          <div className="mt-[-30px] w-[330px] h-20 rounded-[2rem] bg-slate-700" />
-        </div>
-
-        <div className="absolute right-5 top-5 w-[310px] rounded-3xl border border-violet-500/50 bg-black/70 p-4">
-          <h3 className="font-black mb-3">Anesthesia Machine</h3>
-          <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono text-sm">
-            <span>FiO₂ 50%</span>
-            <span>Sevo --</span>
-            <span>MAC --</span>
-            <span>VT 480</span>
-            <span>RR 12</span>
-            <span>PEEP 5</span>
-          </div>
-        </div>
-
-        <div className="absolute bottom-5 left-5 rounded-2xl border border-blue-500/40 bg-slate-900/90 p-4">
-          💉 Drug tray
-        </div>
-
-        <div className="absolute bottom-5 right-5 rounded-2xl border border-emerald-500/40 bg-slate-900/90 p-4">
-          🫁 Airway cart
-        </div>
-      </section>
+<ORRoom />
 
       <section className="rounded-[2rem] border border-slate-800 bg-slate-950/80 p-5">
         <h2 className="text-2xl font-black mb-3">
