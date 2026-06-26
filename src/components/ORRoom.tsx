@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 
 type MonitorId = "ecg" | "spo2" | "bp" | "temp";
-type Phase = "monitoring" | "drugs" | "done";
 
 const patient = {
   name: "Sara M.",
@@ -11,30 +10,18 @@ const patient = {
   surgery: "Elective laparoscopic cholecystectomy",
 };
 
-const monitorItems: { id: MonitorId; label: string; target: string }[] = [
-  { id: "ecg", label: "ECG leads", target: "Chest" },
-  { id: "spo2", label: "Pulse ox", target: "Finger" },
-  { id: "bp", label: "BP cuff", target: "Arm" },
-  { id: "temp", label: "Temp probe", target: "Skin" },
-];
-
-const drugSteps = [
-  { name: "Propofol", doseMgPerKg: 2, answer: 130, unit: "mg", note: "Induction hypnotic" },
-  { name: "Fentanyl", doseMcgPerKg: 1, answer: 65, unit: "mcg", note: "Opioid analgesic" },
-  { name: "Rocuronium", doseMgPerKg: 0.6, answer: 39, unit: "mg", note: "Neuromuscular blocker" },
+const monitors: { id: MonitorId; label: string; value: string }[] = [
+  { id: "ecg", label: "ECG leads", value: "HR 82" },
+  { id: "spo2", label: "Pulse Ox", value: "SpO₂ 99%" },
+  { id: "bp", label: "BP Cuff", value: "118/72" },
+  { id: "temp", label: "Temp Probe", value: "36.8°C" },
 ];
 
 export default function ORRoom() {
-  const [phase, setPhase] = useState<Phase>("monitoring");
   const [connected, setConnected] = useState<MonitorId[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drugIndex, setDrugIndex] = useState(0);
-  const [dose, setDose] = useState("");
-  const [feedback, setFeedback] = useState("Connect the monitors by tapping the devices in the OR.");
+  const [msg, setMsg] = useState("Tap the monitors around the patient to connect them.");
   const [score, setScore] = useState(0);
-
-  const allMonitorsConnected = monitorItems.every((m) => connected.includes(m.id));
-  const currentDrug = drugSteps[drugIndex];
 
   const vitals = useMemo(() => {
     return {
@@ -42,96 +29,45 @@ export default function ORRoom() {
       spo2: connected.includes("spo2") ? "99%" : "--",
       bp: connected.includes("bp") ? "118/72" : "--/--",
       temp: connected.includes("temp") ? "36.8" : "--",
-      etco2: phase === "done" ? "36" : "--",
+      etco2: "--",
     };
-  }, [connected, phase]);
+  }, [connected]);
 
   function connectMonitor(id: MonitorId) {
     if (connected.includes(id)) return;
 
-    setConnected((prev) => [...prev, id]);
-    setScore((s) => s + 10);
+    setConnected([...connected, id]);
+    setScore(score + 10);
 
-    const item = monitorItems.find((m) => m.id === id);
-    setFeedback(`✅ ${item?.label} connected to the ${item?.target}.`);
-
-    if (connected.length + 1 === monitorItems.length) {
-      setFeedback("✅ All basic monitors connected. Open the drug drawer to start induction.");
-      setPhase("drugs");
-    }
-  }
-
-  function chooseDrug(name: string) {
-    if (phase !== "drugs") {
-      setFeedback("❌ Connect all monitors before giving induction drugs.");
-      return;
-    }
-
-    if (name !== currentDrug.name) {
-      setFeedback(`❌ Not yet. The next correct drug is ${currentDrug.name}.`);
-      return;
-    }
-
-    setFeedback(`Correct. Calculate the dose for ${currentDrug.name} using weight ${patient.weight} kg.`);
-  }
-
-  function submitDose() {
-    const numericDose = Number(dose);
-
-    if (!numericDose) {
-      setFeedback("Enter a number first.");
-      return;
-    }
-
-    if (Math.abs(numericDose - currentDrug.answer) <= 2) {
-      setScore((s) => s + 15);
-
-      if (drugIndex < drugSteps.length - 1) {
-        setFeedback(`✅ Correct dose for ${currentDrug.name}. Move to the next drug.`);
-        setDrugIndex((i) => i + 1);
-        setDose("");
-      } else {
-        setFeedback("🎉 Induction drugs completed safely. Great work!");
-        setPhase("done");
-        setDrawerOpen(false);
-      }
-    } else {
-      setFeedback(`❌ Incorrect dose. Recalculate from patient weight: ${patient.weight} kg.`);
-    }
+    const item = monitors.find((m) => m.id === id);
+    setMsg(`✅ ${item?.label} connected successfully.`);
   }
 
   return (
-    <div className="relative w-full overflow-hidden rounded-[2rem] border border-slate-800 bg-[#06101d] text-white shadow-2xl">
-      <div className="grid grid-cols-12 gap-0 min-h-[760px]">
+    <section className="relative overflow-hidden rounded-[2rem] border border-slate-800 bg-[#06101d] text-white shadow-2xl">
+      <div className="grid min-h-[760px] grid-cols-12">
 
-        {/* LEFT PANEL */}
-        <aside className="col-span-12 lg:col-span-2 bg-[#071525] border-r border-cyan-900/50 p-4 space-y-4">
+        {/* LEFT INFO */}
+        <aside className="col-span-12 border-b border-cyan-900/50 bg-[#071525] p-4 lg:col-span-2 lg:border-b-0 lg:border-r">
           <div className="rounded-2xl border border-cyan-800 bg-cyan-950/30 p-4">
-            <h3 className="font-black text-cyan-200 mb-3">Patient Info</h3>
+            <h3 className="mb-3 font-black text-cyan-200">Patient Chart</h3>
             <p>Name: {patient.name}</p>
             <p>Age: {patient.age}</p>
             <p>Sex: {patient.sex}</p>
             <p>Weight: {patient.weight} kg</p>
-            <p className="mt-2 text-sm text-slate-300">{patient.surgery}</p>
+            <p className="mt-3 text-sm text-slate-300">{patient.surgery}</p>
           </div>
 
-          <div className="rounded-2xl border border-yellow-700 bg-yellow-950/20 p-4">
-            <h3 className="font-black text-yellow-200">⭐ Score</h3>
-            <p className="text-3xl font-black mt-2">{score}%</p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-700 bg-slate-900 p-4">
-            <h3 className="font-black mb-2">Progress</h3>
-            <p className="text-sm text-slate-300">
-              {connected.length} / {monitorItems.length} monitors connected
-            </p>
+          <div className="mt-4 rounded-2xl border border-yellow-700 bg-yellow-950/20 p-4">
+            <h3 className="font-black text-yellow-200">Score</h3>
+            <p className="mt-2 text-3xl font-black">{score}%</p>
           </div>
         </aside>
 
-        {/* CENTER OR */}
-        <section className="relative col-span-12 lg:col-span-7 min-h-[760px] overflow-hidden bg-gradient-to-b from-[#b7cce0] via-[#8fb0c8] to-[#6f8798]">
+        {/* OR ROOM */}
+        <div className="relative col-span-12 min-h-[760px] overflow-hidden bg-gradient-to-b from-[#d9e7f0] via-[#9fbdd1] to-[#6f8798] lg:col-span-7">
 
-          {/* wall tiles */}
+          {/* tiles */}
           <div
             className="absolute inset-0 opacity-25"
             style={{
@@ -142,69 +78,79 @@ export default function ORRoom() {
           />
 
           {/* surgical light */}
-          <div className="absolute left-1/2 top-8 -translate-x-1/2 z-10">
-            <div className="mx-auto h-20 w-5 bg-slate-500 rounded-full" />
-            <div className="w-72 h-24 rounded-[50%] bg-slate-300 border-4 border-slate-500 shadow-2xl flex items-center justify-center">
+          <div className="absolute left-1/2 top-6 z-10 -translate-x-1/2">
+            <div className="mx-auto h-20 w-5 rounded-full bg-slate-500" />
+            <div className="flex h-24 w-72 items-center justify-center rounded-[50%] border-4 border-slate-500 bg-slate-300 shadow-2xl">
               <div className="grid grid-cols-4 gap-3">
                 {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="h-7 w-9 rounded-full bg-yellow-100 shadow-[0_0_20px_rgba(254,240,138,.9)]" />
+                  <div
+                    key={i}
+                    className="h-7 w-9 rounded-full bg-yellow-100 shadow-[0_0_20px_rgba(254,240,138,.9)]"
+                  />
                 ))}
               </div>
             </div>
           </div>
 
-          {/* monitor screen */}
-          <div className="absolute left-6 top-10 z-20 w-[310px] rounded-3xl border-4 border-slate-500 bg-black p-5 shadow-2xl">
-            <h3 className="mb-3 font-black text-slate-200">Patient Monitor</h3>
-            <div className="mb-4 h-16 rounded-xl bg-black border border-green-700 overflow-hidden">
-              <div className={connected.includes("ecg") ? "h-full bg-[repeating-linear-gradient(90deg,#22c55e_0_8px,transparent_8px_18px)] animate-pulse" : "h-full bg-slate-950"} />
+          {/* patient monitor */}
+          <div className="absolute left-5 top-8 z-20 w-[310px] rounded-3xl border-4 border-slate-500 bg-black p-5 shadow-2xl">
+            <h3 className="mb-3 font-black text-slate-100">Patient Monitor</h3>
+
+            <div className="mb-4 h-16 overflow-hidden rounded-xl border border-green-700 bg-black">
+              <div
+                className={
+                  connected.includes("ecg")
+                    ? "h-full animate-pulse bg-[repeating-linear-gradient(90deg,#22c55e_0_8px,transparent_8px_18px)]"
+                    : "h-full bg-slate-950"
+                }
+              />
             </div>
+
             <div className="grid grid-cols-2 gap-3 font-mono text-lg">
               <span className="text-green-400">HR {vitals.hr}</span>
               <span className="text-cyan-300">SpO₂ {vitals.spo2}</span>
               <span className="text-red-400">BP {vitals.bp}</span>
-              <span className="text-yellow-300">Temp {vitals.temp}</span>
+              <span className="text-yellow-300">T {vitals.temp}</span>
             </div>
           </div>
 
           {/* anesthesia machine */}
-          <button
-            onClick={() => setFeedback("Machine locked for now. Finish induction drugs first.")}
-            className="absolute right-6 top-32 z-20 w-[250px] rounded-3xl border border-violet-500 bg-slate-950/90 p-4 text-left shadow-2xl hover:scale-[1.02] transition"
-          >
-            <h3 className="font-black mb-3">Anesthesia Machine</h3>
-            <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono">
+          <div className="absolute right-5 top-24 z-20 w-[270px] rounded-3xl border border-violet-500 bg-slate-950/90 p-4 shadow-2xl">
+            <h3 className="mb-3 font-black">Anesthesia Machine</h3>
+            <div className="grid grid-cols-2 gap-2 font-mono text-cyan-300">
               <span>FiO₂ 50%</span>
               <span>Sevo --</span>
+              <span>MAC --</span>
               <span>VT 480</span>
               <span>RR 12</span>
               <span>PEEP 5</span>
-              <span>EtCO₂ {vitals.etco2}</span>
             </div>
-          </button>
+          </div>
 
-          {/* patient bed */}
+          {/* bed + patient */}
           <div className="absolute left-1/2 top-[52%] z-10 -translate-x-1/2 -translate-y-1/2">
             <div className="relative">
-              <div className="absolute left-1/2 top-[250px] -translate-x-1/2 w-[430px] h-[100px] rounded-[2rem] bg-slate-600 shadow-2xl" />
+              <div className="absolute left-1/2 top-[260px] h-[110px] w-[460px] -translate-x-1/2 rounded-[2rem] bg-slate-600 shadow-2xl" />
 
-              {/* patient */}
-              <div className="relative z-20 mx-auto w-[260px] h-[360px]">
+              <div className="relative z-20 mx-auto h-[380px] w-[270px]">
                 <div className="mx-auto h-24 w-24 rounded-full bg-[#f2c49f] shadow-lg" />
-                <div className="mx-auto mt-3 h-52 w-44 rounded-[5rem] bg-gradient-to-b from-blue-200 to-blue-700 shadow-xl" />
+                <div className="mx-auto mt-3 h-56 w-44 rounded-[5rem] bg-gradient-to-b from-blue-200 to-blue-700 shadow-xl" />
+
                 <div className="absolute left-2 top-36 h-36 w-12 -rotate-12 rounded-full bg-blue-100" />
                 <div className="absolute right-2 top-36 h-36 w-12 rotate-12 rounded-full bg-blue-100" />
 
-                {/* connected indicators */}
                 {connected.includes("ecg") && (
-                  <div className="absolute left-[105px] top-36 h-5 w-5 rounded-full bg-green-400 shadow-[0_0_15px_#22c55e]" />
+                  <div className="absolute left-[112px] top-36 h-5 w-5 rounded-full bg-green-400 shadow-[0_0_15px_#22c55e]" />
                 )}
+
                 {connected.includes("spo2") && (
                   <div className="absolute left-4 top-[265px] h-5 w-5 rounded-full bg-cyan-400 shadow-[0_0_15px_#22d3ee]" />
                 )}
+
                 {connected.includes("bp") && (
-                  <div className="absolute right-0 top-44 h-14 w-10 rounded-xl bg-slate-800 border border-cyan-300" />
+                  <div className="absolute right-0 top-44 h-14 w-10 rounded-xl border border-cyan-300 bg-slate-800" />
                 )}
+
                 {connected.includes("temp") && (
                   <div className="absolute right-20 top-32 h-3 w-16 rounded-full bg-yellow-300 shadow-[0_0_12px_#fde047]" />
                 )}
@@ -212,8 +158,8 @@ export default function ORRoom() {
             </div>
           </div>
 
-          {/* clickable monitor devices */}
-          {monitorItems.map((m, index) => {
+          {/* clickable monitor tools */}
+          {monitors.map((m, index) => {
             const positions = [
               "left-[70px] bottom-[170px]",
               "left-[230px] bottom-[80px]",
@@ -237,42 +183,46 @@ export default function ORRoom() {
             );
           })}
 
-          {/* drug drawer */}
+          {/* drug tray */}
           <button
             onClick={() => setDrawerOpen(true)}
-            className="absolute right-10 bottom-8 z-30 rounded-2xl border border-blue-400 bg-slate-950/90 px-5 py-4 shadow-xl hover:scale-105 transition"
+            className="absolute right-10 bottom-8 z-30 rounded-2xl border border-blue-400 bg-slate-950/90 px-5 py-4 shadow-xl transition hover:scale-105"
           >
             💉 Drug Drawer
           </button>
 
-          {/* task card */}
-          <div className="absolute left-6 bottom-6 z-30 w-[520px] rounded-3xl bg-slate-950/90 border border-cyan-900 p-5 shadow-2xl">
-            <h3 className="font-black text-cyan-200 mb-2">Your Task</h3>
-            <p className="text-slate-200">{feedback}</p>
+          {/* airway cart */}
+          <button
+            onClick={() => setMsg("Airway cart locked for the next step.")}
+            className="absolute left-10 bottom-8 z-30 rounded-2xl border border-emerald-400 bg-slate-950/90 px-5 py-4 shadow-xl transition hover:scale-105"
+          >
+            🫁 Airway Cart
+          </button>
+
+          {/* feedback */}
+          <div className="absolute bottom-28 left-6 z-30 w-[520px] rounded-3xl border border-cyan-900 bg-slate-950/90 p-5 shadow-2xl">
+            <h3 className="mb-2 font-black text-cyan-200">Your Task</h3>
+            <p className="text-slate-200">{msg}</p>
           </div>
-        </section>
+        </div>
 
         {/* RIGHT PANEL */}
-        <aside className="col-span-12 lg:col-span-3 bg-[#071525] border-l border-cyan-900/50 p-4">
+        <aside className="col-span-12 border-t border-cyan-900/50 bg-[#071525] p-4 lg:col-span-3 lg:border-l lg:border-t-0">
           <div className="rounded-3xl border border-cyan-800 bg-slate-950/70 p-4">
-            <h2 className="text-2xl font-black mb-2">Drug Drawer</h2>
-            <p className="text-slate-400 mb-4">
-              {phase === "drugs" ? "Select the correct induction drug." : "Locked until monitors are connected."}
+            <h2 className="mb-2 text-2xl font-black">Drug Drawer</h2>
+            <p className="mb-4 text-slate-400">
+              Connect basic monitors before giving drugs.
             </p>
 
             <div className="space-y-3">
-              {drugSteps.map((drug) => (
+              {["Propofol", "Fentanyl", "Rocuronium", "Ketamine", "Midazolam"].map((drug) => (
                 <button
-                  key={drug.name}
-                  onClick={() => chooseDrug(drug.name)}
-                  className={`w-full rounded-2xl border p-4 text-left transition hover:scale-[1.01] ${
-                    drug.name === currentDrug.name && phase === "drugs"
-                      ? "border-cyan-400 bg-cyan-400/10"
-                      : "border-slate-700 bg-slate-900"
-                  }`}
+                  key={drug}
+                  onClick={() => setMsg("Drug dose calculator will be added in the next step.")}
+                  className="w-full rounded-2xl border border-slate-700 bg-slate-900 p-4 text-left transition hover:scale-[1.01]"
                 >
-                  <b>{drug.name}</b>
-                  <p className="text-sm text-slate-400">{drug.note}</p>
+                  <b>{drug}</b>
+                  <p className="text-sm text-slate-400">Tap to calculate dose</p>
                 </button>
               ))}
             </div>
@@ -280,34 +230,19 @@ export default function ORRoom() {
         </aside>
       </div>
 
-      {/* dose modal */}
-      {drawerOpen && phase === "drugs" && (
+      {drawerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="w-[min(440px,92vw)] rounded-3xl border border-cyan-600 bg-slate-950 p-6 shadow-2xl">
-            <button onClick={() => setDrawerOpen(false)} className="float-right text-2xl">×</button>
-            <h2 className="text-2xl font-black mb-2">{currentDrug.name} Dose</h2>
-            <p className="text-slate-400 mb-4">
-              Patient weight: <b>{patient.weight} kg</b>
-            </p>
-            <p className="mb-3">
-              Calculate dose in <b>{currentDrug.unit}</b>.
-            </p>
-            <input
-              value={dose}
-              onChange={(e) => setDose(e.target.value)}
-              className="w-full rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white mb-4"
-              placeholder={`Enter dose in ${currentDrug.unit}`}
-              inputMode="numeric"
-            />
-            <button
-              onClick={submitDose}
-              className="w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-4 font-black text-slate-950"
-            >
-              Submit dose
+          <div className="w-[min(460px,92vw)] rounded-3xl border border-cyan-600 bg-slate-950 p-6 shadow-2xl">
+            <button onClick={() => setDrawerOpen(false)} className="float-right text-2xl">
+              ×
             </button>
+            <h2 className="mb-3 text-2xl font-black">Drug Drawer</h2>
+            <p className="text-slate-300">
+              Next step: we will add dose calculation for Propofol, Fentanyl, and Rocuronium.
+            </p>
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
