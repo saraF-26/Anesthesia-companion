@@ -1,3 +1,4 @@
+import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 type Step = "brief" | "preop" | "monitoring" | "drugs" | "airway" | "machine" | "done";
@@ -54,7 +55,10 @@ const airway = [
   { name: "LMA only", correct: false },
 ];
 
-export default function Cases() {
+export const Route = createFileRoute("/cases")({
+  component: Cases,
+});
+function Cases() {
   const [step, setStep] = useState<Step>("brief");
   const [chart, setChart] = useState(false);
   const [selectedPreop, setSelectedPreop] = useState<string[]>([]);
