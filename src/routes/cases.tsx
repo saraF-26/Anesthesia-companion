@@ -164,8 +164,38 @@ function Cases() {
         </div>
       </section>
 
-      <section className="relative min-h-[520px] rounded-[2rem] border border-slate-800 overflow-hidden bg-[radial-gradient(circle_at_center,rgba(56,189,248,.14),transparent_45%),#0b1120] mb-6">
-        <div className="absolute left-5 top-5 w-[280px] rounded-3xl border border-cyan-500/50 bg-black/70 p-4">
+      </section>
+
+      <section className="relative min-h-[720px] rounded-[2rem] border border-slate-800 overflow-hidden bg-[#d8e6ef] mb-6 shadow-2xl">
+        {/* OR Background */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#d9e7f0] via-[#c8d8e3] to-[#aebfca]" />
+
+        <div
+          className="absolute inset-0 opacity-30"
+          style={{
+            backgroundImage:
+              "linear-gradient(#ffffff 2px, transparent 2px), linear-gradient(90deg,#ffffff 2px,transparent 2px)",
+            backgroundSize: "90px 90px",
+          }}
+        />
+
+        <div className="absolute left-0 right-0 top-0 h-24 bg-gradient-to-b from-[#8fa9bb] to-transparent" />
+        <div className="absolute left-0 right-0 bottom-0 h-28 bg-gradient-to-t from-[#7f94a3] to-transparent" />
+
+        {/* Ceiling surgical light */}
+        <div className="absolute left-1/2 top-8 -translate-x-1/2 z-10">
+          <div className="w-8 h-24 mx-auto bg-slate-500 rounded-full" />
+          <div className="w-72 h-24 rounded-[50%] bg-slate-300 border-4 border-slate-500 shadow-2xl flex items-center justify-center -mt-2">
+            <div className="grid grid-cols-4 gap-3">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="w-9 h-7 rounded-full bg-yellow-100 shadow-[0_0_20px_rgba(254,240,138,.9)]" />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Patient Monitor */}
+        <div className="absolute left-5 top-5 w-[300px] rounded-3xl border border-cyan-500/50 bg-black/80 p-4 z-20 shadow-2xl">
           <h3 className="font-black mb-3">Patient Monitor</h3>
           <div className="h-14 rounded-xl bg-[repeating-linear-gradient(90deg,#22c55e_0_8px,transparent_8px_18px)] opacity-80 mb-3" />
           <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono">
