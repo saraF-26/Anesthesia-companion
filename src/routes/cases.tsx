@@ -1,34 +1,26 @@
 import { useMemo, useState } from "react";
 
-type Step = "preop" | "monitoring" | "induction" | "airway" | "machine";
+type Step = "brief" | "preop" | "monitoring" | "drugs" | "airway" | "machine" | "done";
 
 const patient = {
-  age: 27,
+  age: "27 years",
   sex: "Female",
   weight: 65,
-  height: 165,
+  height: "165 cm",
   asa: "ASA I",
   surgery: "Elective laparoscopic cholecystectomy",
-  allergy: "No known allergies",
-  meds: "No regular medications",
+  allergies: "None",
   pmh: "No significant past medical history",
+  meds: "No regular medications",
   airway: "Mallampati II, mouth opening >3 fingers, normal neck movement",
   lastMeal: "Light meal 8 hours ago, clear fluids 3 hours ago",
 };
 
-const monitors = [
-  { id: "ecg", label: "ECG", value: "HR 82" },
-  { id: "spo2", label: "Pulse Ox", value: "SpO₂ 99%" },
-  { id: "bp", label: "NIBP cuff", value: "BP 118/72" },
-  { id: "capno", label: "Capnography", value: "Ready" },
-  { id: "temp", label: "Temperature", value: "36.8°C" },
-];
-
-const preopItems = [
+const preop = [
   "Confirm identity",
   "Confirm consent",
-  "Check procedure/site",
-  "Ask allergies",
+  "Confirm procedure/site",
+  "Check allergies",
   "Ask last oral intake",
   "Review medications",
   "Review PMH",
@@ -37,12 +29,20 @@ const preopItems = [
   "Equipment check",
 ];
 
+const monitors = [
+  { id: "ecg", label: "ECG", value: "HR 82" },
+  { id: "spo2", label: "Pulse oximeter", value: "SpO₂ 99%" },
+  { id: "bp", label: "BP cuff", value: "BP 118/72" },
+  { id: "capno", label: "Capnography", value: "Ready" },
+  { id: "temp", label: "Temperature", value: "36.8°C" },
+];
+
 const drugs = [
   { name: "Propofol", dose: "1.5–2.5 mg/kg", correct: true },
   { name: "Fentanyl", dose: "1–2 mcg/kg", correct: true },
   { name: "Rocuronium", dose: "0.6–1.2 mg/kg", correct: true },
-  { name: "Midazolam", dose: "Not routine for this simple case", correct: false },
-  { name: "Ketamine", dose: "Useful in shock/bronchospasm", correct: false },
+  { name: "Ketamine", dose: "Not first choice here", correct: false },
+  { name: "Midazolam", dose: "Not routine induction plan", correct: false },
 ];
 
 const airway = [
@@ -55,144 +55,137 @@ const airway = [
 ];
 
 export default function Cases() {
-  const [infoOpen, setInfoOpen] = useState(false);
-  const [step, setStep] = useState<Step>("preop");
-  const [donePreop, setDonePreop] = useState<string[]>([]);
+  const [step, setStep] = useState<Step>("brief");
+  const [chart, setChart] = useState(false);
+  const [selectedPreop, setSelectedPreop] = useState<string[]>([]);
   const [connected, setConnected] = useState<string[]>([]);
-  const [chosenDrugs, setChosenDrugs] = useState<string[]>([]);
-  const [chosenAirway, setChosenAirway] = useState<string[]>([]);
-  const [message, setMessage] = useState("Start with pre-op assessment.");
-  const [tubePlaced, setTubePlaced] = useState(false);
+  const [selectedDrugs, setSelectedDrugs] = useState<string[]>([]);
+  const [selectedAirway, setSelectedAirway] = useState<string[]>([]);
+  const [msg, setMsg] = useState("Read the case, then open the patient chart.");
+  const [tube, setTube] = useState(false);
 
-  const preopComplete = donePreop.length >= 8;
-  const monitoringComplete = ["ecg", "spo2", "bp", "capno"].every((x) => connected.includes(x));
-  const drugPlanReady = ["Propofol", "Fentanyl", "Rocuronium"].every((x) => chosenDrugs.includes(x));
-  const airwayReady = ["Face mask", "Laryngoscope", "ETT 7.0–7.5", "Suction"].every((x) =>
-    chosenAirway.includes(x)
+  const preopDone = selectedPreop.length >= 8;
+  const monitoringDone = ["ecg", "spo2", "bp", "capno"].every((x) => connected.includes(x));
+  const drugsDone = ["Propofol", "Fentanyl", "Rocuronium"].every((x) => selectedDrugs.includes(x));
+  const airwayDone = ["Face mask", "Laryngoscope", "ETT 7.0–7.5", "Suction"].every((x) =>
+    selectedAirway.includes(x)
   );
 
   const vitals = useMemo(() => {
-    if (!monitoringComplete) return { hr: "--", spo2: "--", bp: "--/--", etco2: "--" };
-    if (tubePlaced) return { hr: "82", spo2: "99%", bp: "116/70", etco2: "36" };
+    if (!monitoringDone) return { hr: "--", spo2: "--", bp: "--/--", etco2: "--" };
+    if (tube) return { hr: "82", spo2: "99%", bp: "116/70", etco2: "36" };
     return { hr: "82", spo2: "99%", bp: "118/72", etco2: "--" };
-  }, [monitoringComplete, tubePlaced]);
+  }, [monitoringDone, tube]);
 
-  function togglePreop(item: string) {
-    if (donePreop.includes(item)) return;
-    setDonePreop([...donePreop, item]);
-    setMessage("Good. Keep completing the pre-op checklist.");
-  }
+  function next() {
+    if (step === "brief") return setStep("preop");
 
-  function connectMonitor(id: string) {
-    if (connected.includes(id)) return;
-    setConnected([...connected, id]);
-    setMessage("Monitor connected.");
-  }
+    if (step === "preop" && !preopDone) {
+      return setMsg("Incorrect. Complete the essential pre-op assessment first.");
+    }
 
-  function chooseDrug(name: string, correct: boolean) {
-    if (!correct) {
-      setMessage("Incorrect for this routine ASA I case. Reassess the indication and choose again.");
-      return;
+    if (step === "monitoring" && !monitoringDone) {
+      return setMsg("Incorrect. ASA basic monitoring must be connected before induction.");
     }
-    if (!chosenDrugs.includes(name)) setChosenDrugs([...chosenDrugs, name]);
-    setMessage("Correct drug choice. Continue building the induction plan.");
-  }
 
-  function chooseAirway(name: string, correct: boolean) {
-    if (!correct) {
-      setMessage("Incorrect. LMA alone is not the primary airway plan for this intubated laparoscopic case.");
-      return;
+    if (step === "drugs" && !drugsDone) {
+      return setMsg("Incorrect. Choose hypnotic + opioid + neuromuscular blocker.");
     }
-    if (!chosenAirway.includes(name)) setChosenAirway([...chosenAirway, name]);
-    setMessage("Correct airway equipment selected.");
-  }
 
-  function nextStep() {
-    if (step === "preop" && !preopComplete) {
-      setMessage("Incorrect. Complete the essential pre-op assessment first.");
-      return;
-    }
-    if (step === "monitoring" && !monitoringComplete) {
-      setMessage("Incorrect. ASA basic monitoring must be connected before induction.");
-      return;
-    }
-    if (step === "induction" && !drugPlanReady) {
-      setMessage("Incorrect. Complete the induction plan: hypnotic + opioid + paralytic.");
-      return;
-    }
-    if (step === "airway" && !airwayReady) {
-      setMessage("Incorrect. Prepare essential airway equipment before intubation.");
-      return;
+    if (step === "airway" && !airwayDone) {
+      return setMsg("Incorrect. Prepare essential airway equipment before intubation.");
     }
 
     if (step === "preop") setStep("monitoring");
-    else if (step === "monitoring") setStep("induction");
-    else if (step === "induction") setStep("airway");
+    else if (step === "monitoring") setStep("drugs");
+    else if (step === "drugs") setStep("airway");
     else if (step === "airway") {
-      setTubePlaced(true);
+      setTube(true);
       setStep("machine");
-      setMessage("Correct. Tube placed and continuous waveform EtCO₂ appears.");
-    }
+      setMsg("Correct. ETT placed. Continuous waveform EtCO₂ appears.");
+    } else if (step === "machine") setStep("done");
+  }
+
+  function chooseWrong(text: string) {
+    setMsg(`Incorrect. ${text} Try again.`);
   }
 
   return (
-    <main style={s.page}>
-      <header style={s.header}>
+    <main className="min-h-screen bg-[#05070d] text-slate-100 p-6 md:p-10">
+      <section className="flex items-start justify-between gap-4 mb-8">
         <div>
-          <p style={s.kicker}>Virtual Operating Room</p>
-          <h1 style={s.title}>OR Simulator</h1>
-          <p style={s.subtitle}>
-            A 27-year-old female presents for elective laparoscopic cholecystectomy under general
-            anesthesia.
+          <p className="text-cyan-400 text-xs tracking-[0.25em] uppercase">Virtual Operating Room</p>
+          <h1 className="text-4xl md:text-6xl font-black mt-2">OR Simulator</h1>
+          <p className="text-slate-400 mt-3 max-w-3xl">
+            A 27-year-old female presents for elective laparoscopic cholecystectomy under general anesthesia.
           </p>
         </div>
 
-        <button style={s.infoButton} onClick={() => setInfoOpen(true)}>
-          ℹ Patient info
+        <button
+          onClick={() => setChart(true)}
+          className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 font-bold hover:border-cyan-400"
+        >
+          ℹ Patient Chart
         </button>
-      </header>
+      </section>
 
-      <section style={s.preopBox}>
-        <h2>Pre-op Essentials</h2>
-        <p>
-          Before anesthesia: confirm identity, consent, allergies, medications, comorbidities, last
-          oral intake, airway assessment, ASA class, IV access, baseline vitals, and equipment check.
+      <section className="grid md:grid-cols-5 gap-3 mb-6">
+        {["Brief", "Pre-op", "Monitoring", "Drugs", "Airway", "Machine"].map((x, i) => (
+          <div
+            key={x}
+            className={`rounded-2xl p-3 border ${
+              ["brief", "preop", "monitoring", "drugs", "airway", "machine"][i] === step
+                ? "border-cyan-400 bg-cyan-400/10"
+                : "border-slate-800 bg-slate-900/60"
+            }`}
+          >
+            {x}
+          </div>
+        ))}
+      </section>
+
+      <section className="rounded-[2rem] border border-slate-800 bg-slate-950/80 p-5 mb-6">
+        <h2 className="text-xl font-black mb-2">Pre-op essentials</h2>
+        <p className="text-slate-400">
+          Confirm patient identity, consent, allergies, medications, comorbidities, last oral intake,
+          airway assessment, IV access, baseline vitals, and equipment readiness.
         </p>
-        <div style={s.fastingGrid}>
-          <div>Clear fluids: <b>2 h</b></div>
-          <div>Breast milk: <b>4 h</b></div>
-          <div>Infant formula / non-human milk: <b>6 h</b></div>
-          <div>Light meal: <b>6 h</b></div>
-          <div>Fatty/heavy meal: <b>8 h</b></div>
+
+        <div className="grid md:grid-cols-5 gap-3 mt-4 text-sm">
+          <div className="rounded-xl bg-slate-900 p-3">Clear fluids: <b>2 h</b></div>
+          <div className="rounded-xl bg-slate-900 p-3">Breast milk: <b>4 h</b></div>
+          <div className="rounded-xl bg-slate-900 p-3">Formula/milk: <b>6 h</b></div>
+          <div className="rounded-xl bg-slate-900 p-3">Light meal: <b>6 h</b></div>
+          <div className="rounded-xl bg-slate-900 p-3">Fatty meal: <b>8 h</b></div>
         </div>
       </section>
 
-      <section style={s.room}>
-        <div style={s.monitor}>
-          <h3>Patient Monitor</h3>
-          <div style={s.wave} />
-          <div style={s.vitals}>
-            <b>HR {vitals.hr}</b>
-            <b>SpO₂ {vitals.spo2}</b>
-            <b>BP {vitals.bp}</b>
-            <b>EtCO₂ {vitals.etco2}</b>
+      <section className="relative min-h-[520px] rounded-[2rem] border border-slate-800 overflow-hidden bg-[radial-gradient(circle_at_center,rgba(56,189,248,.14),transparent_45%),#0b1120] mb-6">
+        <div className="absolute left-5 top-5 w-[280px] rounded-3xl border border-cyan-500/50 bg-black/70 p-4">
+          <h3 className="font-black mb-3">Patient Monitor</h3>
+          <div className="h-14 rounded-xl bg-[repeating-linear-gradient(90deg,#22c55e_0_8px,transparent_8px_18px)] opacity-80 mb-3" />
+          <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono">
+            <span>HR {vitals.hr}</span>
+            <span>SpO₂ {vitals.spo2}</span>
+            <span>BP {vitals.bp}</span>
+            <span>EtCO₂ {vitals.etco2}</span>
           </div>
         </div>
 
-        <div style={s.patientZone}>
-          <div style={s.light}>✦</div>
-          <div style={s.patient}>
-            <div style={s.head} />
-            <div style={s.body} />
-            <div style={s.leftArm} />
-            <div style={s.rightArm} />
+        <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 text-center">
+          <div className="text-6xl drop-shadow-[0_0_25px_#38bdf8] mb-2">✦</div>
+          <div className="relative mx-auto w-[150px] h-[250px]">
+            <div className="mx-auto w-16 h-16 rounded-full bg-[#f2c49f]" />
+            <div className="mx-auto mt-2 w-32 h-40 rounded-full bg-gradient-to-b from-blue-200 to-blue-900" />
+            <div className="absolute -left-8 top-24 w-10 h-28 rounded-full bg-blue-100 rotate-12" />
+            <div className="absolute -right-8 top-24 w-10 h-28 rounded-full bg-blue-100 -rotate-12" />
           </div>
-          <div style={s.table} />
+          <div className="mt-[-30px] w-[330px] h-20 rounded-[2rem] bg-slate-700" />
         </div>
 
-        <div style={s.machine}>
-          <h3>Anesthesia Machine</h3>
-          <div style={s.machineGrid}>
+        <div className="absolute right-5 top-5 w-[310px] rounded-3xl border border-violet-500/50 bg-black/70 p-4">
+          <h3 className="font-black mb-3">Anesthesia Machine</h3>
+          <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono text-sm">
             <span>FiO₂ 50%</span>
             <span>Sevo --</span>
             <span>MAC --</span>
@@ -201,62 +194,100 @@ export default function Cases() {
             <span>PEEP 5</span>
           </div>
         </div>
+
+        <div className="absolute bottom-5 left-5 rounded-2xl border border-blue-500/40 bg-slate-900/90 p-4">
+          💉 Drug tray
+        </div>
+
+        <div className="absolute bottom-5 right-5 rounded-2xl border border-emerald-500/40 bg-slate-900/90 p-4">
+          🫁 Airway cart
+        </div>
       </section>
 
-      <section style={s.panel}>
-        <h2>
-          Step:{" "}
-          {step === "preop"
-            ? "Pre-op check"
-            : step === "monitoring"
-            ? "Connect monitors"
-            : step === "induction"
-            ? "Choose induction plan"
-            : step === "airway"
-            ? "Prepare airway"
-            : "Machine settings"}
+      <section className="rounded-[2rem] border border-slate-800 bg-slate-950/80 p-5">
+        <h2 className="text-2xl font-black mb-3">
+          {step === "brief" && "Case Brief"}
+          {step === "preop" && "Step 1 — Pre-op check"}
+          {step === "monitoring" && "Step 2 — Connect monitors"}
+          {step === "drugs" && "Step 3 — Choose induction plan"}
+          {step === "airway" && "Step 4 — Prepare airway"}
+          {step === "machine" && "Step 5 — Machine setup"}
+          {step === "done" && "Debrief"}
         </h2>
 
-        <p style={message.startsWith("Incorrect") ? s.badMsg : s.goodMsg}>{message}</p>
+        <p className={msg.startsWith("Incorrect") ? "text-red-300 mb-4" : "text-emerald-300 mb-4"}>
+          {msg}
+        </p>
+
+        {step === "brief" && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            You are the anesthesia student in the OR. Start by reviewing patient information, then complete
+            pre-op assessment before induction.
+          </div>
+        )}
 
         {step === "preop" && (
-          <div style={s.grid}>
-            {preopItems.map((item) => (
+          <div className="grid md:grid-cols-3 gap-3">
+            {preop.map((x) => (
               <button
-                key={item}
-                style={donePreop.includes(item) ? s.selected : s.choice}
-                onClick={() => togglePreop(item)}
+                key={x}
+                onClick={() => {
+                  if (!selectedPreop.includes(x)) setSelectedPreop([...selectedPreop, x]);
+                  setMsg("Good. Continue completing the pre-op checklist.");
+                }}
+                className={`rounded-2xl border p-4 text-left ${
+                  selectedPreop.includes(x)
+                    ? "border-emerald-400 bg-emerald-400/10"
+                    : "border-slate-700 bg-slate-900"
+                }`}
               >
-                {item}
+                {x}
               </button>
             ))}
           </div>
         )}
 
         {step === "monitoring" && (
-          <div style={s.grid}>
+          <div className="grid md:grid-cols-3 gap-3">
             {monitors.map((m) => (
               <button
                 key={m.id}
-                style={connected.includes(m.id) ? s.selected : s.choice}
-                onClick={() => connectMonitor(m.id)}
+                onClick={() => {
+                  if (!connected.includes(m.id)) setConnected([...connected, m.id]);
+                  setMsg("Monitor connected.");
+                }}
+                className={`rounded-2xl border p-4 text-left ${
+                  connected.includes(m.id)
+                    ? "border-emerald-400 bg-emerald-400/10"
+                    : "border-slate-700 bg-slate-900"
+                }`}
               >
-                {m.label}
+                <b>{m.label}</b>
+                <br />
                 <small>{connected.includes(m.id) ? m.value : "Not connected"}</small>
               </button>
             ))}
           </div>
         )}
 
-        {step === "induction" && (
-          <div style={s.grid}>
+        {step === "drugs" && (
+          <div className="grid md:grid-cols-3 gap-3">
             {drugs.map((d) => (
               <button
                 key={d.name}
-                style={chosenDrugs.includes(d.name) ? s.selected : s.choice}
-                onClick={() => chooseDrug(d.name, d.correct)}
+                onClick={() => {
+                  if (!d.correct) return chooseWrong("This is not the best routine choice for this ASA I elective case.");
+                  if (!selectedDrugs.includes(d.name)) setSelectedDrugs([...selectedDrugs, d.name]);
+                  setMsg("Correct drug choice. Continue.");
+                }}
+                className={`rounded-2xl border p-4 text-left ${
+                  selectedDrugs.includes(d.name)
+                    ? "border-emerald-400 bg-emerald-400/10"
+                    : "border-slate-700 bg-slate-900"
+                }`}
               >
-                {d.name}
+                <b>{d.name}</b>
+                <br />
                 <small>{d.dose}</small>
               </button>
             ))}
@@ -264,12 +295,20 @@ export default function Cases() {
         )}
 
         {step === "airway" && (
-          <div style={s.grid}>
+          <div className="grid md:grid-cols-3 gap-3">
             {airway.map((a) => (
               <button
                 key={a.name}
-                style={chosenAirway.includes(a.name) ? s.selected : s.choice}
-                onClick={() => chooseAirway(a.name, a.correct)}
+                onClick={() => {
+                  if (!a.correct) return chooseWrong("LMA alone is not the primary airway plan for this intubated laparoscopic case.");
+                  if (!selectedAirway.includes(a.name)) setSelectedAirway([...selectedAirway, a.name]);
+                  setMsg("Correct airway equipment selected.");
+                }}
+                className={`rounded-2xl border p-4 text-left ${
+                  selectedAirway.includes(a.name)
+                    ? "border-emerald-400 bg-emerald-400/10"
+                    : "border-slate-700 bg-slate-900"
+                }`}
               >
                 {a.name}
               </button>
@@ -278,70 +317,44 @@ export default function Cases() {
         )}
 
         {step === "machine" && (
-          <div style={s.success}>
-            ✅ Safe initial setup completed. Tube confirmed with waveform capnography.
+          <div className="rounded-2xl border border-emerald-400 bg-emerald-400/10 p-5">
+            ✅ Safe induction completed. ETT confirmed with waveform capnography. Initial ventilator settings:
+            VT 6–8 mL/kg, RR 10–14/min, PEEP 5, FiO₂ adjusted to oxygenation.
           </div>
         )}
 
-        <button style={s.primary} onClick={nextStep}>
+        {step === "done" && (
+          <div className="rounded-2xl border border-cyan-400 bg-cyan-400/10 p-5">
+            Score: Excellent. You completed pre-op assessment, ASA monitoring, induction plan, airway
+            preparation, and post-intubation confirmation.
+          </div>
+        )}
+
+        <button
+          onClick={next}
+          className="mt-5 rounded-2xl bg-gradient-to-r from-cyan-400 to-indigo-400 text-slate-950 font-black px-6 py-3"
+        >
           Continue
         </button>
       </section>
 
-      {infoOpen && (
-        <aside style={s.drawer}>
-          <button style={s.close} onClick={() => setInfoOpen(false)}>×</button>
-          <h2>Patient Information</h2>
+      {chart && (
+        <aside className="fixed top-0 right-0 h-screen w-[min(430px,92vw)] bg-slate-950 border-l border-slate-700 p-6 z-50">
+          <button onClick={() => setChart(false)} className="float-right text-3xl">×</button>
+          <h2 className="text-2xl font-black mb-5">Patient Chart</h2>
           {Object.entries(patient).map(([k, v]) => (
-            <div key={k} style={s.infoRow}>
-              <b>{k}</b>
-              <span>{v}</span>
+            <div key={k} className="border-b border-slate-800 py-3">
+              <b className="capitalize text-cyan-300">{k}</b>
+              <p className="text-slate-300">{v}</p>
             </div>
           ))}
         </aside>
       )}
 
-      <footer style={s.refs}>
-        References: ASA Practice Guidelines for Preoperative Fasting; ASA Standards for Basic
-        Anesthetic Monitoring; Morgan & Mikhail’s Clinical Anesthesiology; OpenAnesthesia.
+      <footer className="mt-8 border-t border-slate-800 pt-4 text-slate-400 text-sm">
+        References: ASA Practice Guidelines for Preoperative Fasting; ASA Standards for Basic Anesthetic
+        Monitoring; Morgan & Mikhail’s Clinical Anesthesiology; OpenAnesthesia.
       </footer>
     </main>
   );
 }
-
-const s: Record<string, React.CSSProperties> = {
-  page: { minHeight: "100vh", padding: 36, background: "#05070d", color: "#e5eefc" },
-  header: { display: "flex", justifyContent: "space-between", gap: 20, alignItems: "start" },
-  kicker: { color: "#38bdf8", textTransform: "uppercase", letterSpacing: 2, fontSize: 12 },
-  title: { fontSize: 54, margin: "6px 0", fontWeight: 900 },
-  subtitle: { color: "#9ca3af", fontSize: 18, maxWidth: 850 },
-  infoButton: { padding: "14px 18px", borderRadius: 16, background: "#111827", color: "#e5eefc", border: "1px solid #334155" },
-  preopBox: { marginTop: 24, padding: 22, borderRadius: 24, background: "rgba(15,23,42,.8)", border: "1px solid #1e293b" },
-  fastingGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 10, marginTop: 14, color: "#bae6fd" },
-  room: { position: "relative", minHeight: 500, marginTop: 24, borderRadius: 30, background: "radial-gradient(circle at center, rgba(56,189,248,.12), transparent), #0b1120", border: "1px solid #1e293b", overflow: "hidden" },
-  monitor: { position: "absolute", left: 24, top: 24, width: 280, padding: 18, borderRadius: 22, background: "#020617", border: "1px solid #0ea5e9" },
-  wave: { height: 50, borderRadius: 10, background: "repeating-linear-gradient(90deg,#22c55e 0 8px,transparent 8px 18px)", opacity: .8 },
-  vitals: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, color: "#67e8f9", marginTop: 12 },
-  patientZone: { position: "absolute", left: "36%", top: "18%", width: 300, height: 300 },
-  light: { textAlign: "center", fontSize: 56, color: "#e0f2fe", filter: "drop-shadow(0 0 28px #38bdf8)" },
-  patient: { position: "relative", margin: "0 auto", width: 140, height: 240, zIndex: 2 },
-  head: { width: 64, height: 64, borderRadius: "50%", background: "#f2c49f", margin: "0 auto" },
-  body: { width: 120, height: 160, borderRadius: 60, background: "linear-gradient(#93c5fd,#1e3a8a)", margin: "8px auto" },
-  leftArm: { position: "absolute", left: -30, top: 88, width: 38, height: 120, borderRadius: 20, background: "#bfdbfe", transform: "rotate(18deg)" },
-  rightArm: { position: "absolute", right: -30, top: 88, width: 38, height: 120, borderRadius: 20, background: "#bfdbfe", transform: "rotate(-18deg)" },
-  table: { position: "absolute", bottom: 0, left: -10, width: 320, height: 80, borderRadius: 30, background: "#334155" },
-  machine: { position: "absolute", right: 24, top: 24, width: 300, padding: 18, borderRadius: 22, background: "#020617", border: "1px solid #8b5cf6" },
-  machineGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, color: "#67e8f9" },
-  panel: { marginTop: 24, padding: 24, borderRadius: 24, background: "rgba(15,23,42,.85)", border: "1px solid #1e293b" },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 },
-  choice: { padding: 15, borderRadius: 16, background: "#020617", color: "#e5eefc", border: "1px solid #334155", textAlign: "left", display: "grid", gap: 5 },
-  selected: { padding: 15, borderRadius: 16, background: "rgba(34,197,94,.14)", color: "#e5eefc", border: "1px solid #22c55e", textAlign: "left", display: "grid", gap: 5 },
-  goodMsg: { color: "#86efac" },
-  badMsg: { color: "#fca5a5" },
-  primary: { marginTop: 18, padding: "14px 20px", borderRadius: 16, background: "linear-gradient(135deg,#38bdf8,#818cf8)", border: 0, fontWeight: 800 },
-  success: { padding: 18, borderRadius: 16, background: "rgba(34,197,94,.12)", border: "1px solid #22c55e" },
-  drawer: { position: "fixed", right: 0, top: 0, height: "100vh", width: "min(430px,92vw)", background: "#020617", borderLeft: "1px solid #334155", padding: 26, zIndex: 50 },
-  close: { float: "right", background: "transparent", border: 0, color: "#fff", fontSize: 30 },
-  infoRow: { padding: 12, borderBottom: "1px solid #1e293b", display: "grid", gap: 4 },
-  refs: { marginTop: 24, color: "#94a3b8", borderTop: "1px solid #1e293b", paddingTop: 16 },
-};
