@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import ORRoom from "../components/ORRoom";
 
 type Step = "brief" | "preop" | "monitoring" | "drugs" | "airway" | "machine" | "done";
 
@@ -167,7 +166,6 @@ function Cases() {
 
       </section>
 
-<ORRoom />
 
       <section className="rounded-[2rem] border border-slate-800 bg-slate-950/80 p-5">
         <h2 className="text-2xl font-black mb-3">
