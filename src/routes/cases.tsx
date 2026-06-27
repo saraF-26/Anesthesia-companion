@@ -1,492 +1,548 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
-import { 
-  Heart, 
-  Activity, 
-  Thermometer, 
-  Wind, 
-  Clock, 
-  AlertCircle, 
-  CheckCircle2, 
-  ChevronRight,
-  Syringe,
-  Stethoscope,
-  XCircle,
-  Zap,
-  Droplet,
-  ArrowRight
-} from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
 
-// --- Route Definition ---
-export const Route = createFileRoute('/cases')({
-  component: ORSimulator,
-});
+/**
+ * ANESTHESIA SIMULATOR - ADVANCED CLINICAL MODULE
+ * Features: High-fidelity SVG visuals, procedural logic, drug calculations, 
+ * and interactive equipment placement.
+ */
 
-// --- Types & Data ---
-
-type Phase = 'PREPARATION' | 'INDUCTION' | 'INTUBATION' | 'MAINTENANCE';
-
-interface Drug {
-  id: string;
-  name: string;
-  concentration: number; // mg/ml
-  dosePerKg: number; // mg/kg
-  color: string;
+// --- Types & Interfaces ---
+interface Vitals {
+  hr: number;
+  spo2: number;
+  bp: { sys: number; dia: number };
+  rr: number;
+  etco2: number;
+  temp: number;
 }
 
-const DRUGS: Drug[] = [
-  { id: 'propofol', name: 'Propofol', concentration: 10, dosePerKg: 2.0, color: '#FFFFFF' },
-  { id: 'fentanyl', name: 'Fentanyl', concentration: 0.05, dosePerKg: 0.002, color: '#7EB6FF' },
-  { id: 'rocuronium', name: 'Rocuronium', concentration: 10, dosePerKg: 0.6, color: '#FF9E9E' },
-  { id: 'succinylcholine', name: 'Succinylcholine', concentration: 20, dosePerKg: 1.0, color: '#FF4500' },
-  { id: 'atracurium', name: 'Atracurium', concentration: 10, dosePerKg: 0.5, color: '#FFB3BA' },
-  { id: 'midazolam', name: 'Midazolam', concentration: 1, dosePerKg: 0.05, color: '#FFD700' },
-  { id: 'ketamine', name: 'Ketamine', concentration: 50, dosePerKg: 1.5, color: '#90EE90' },
-  { id: 'ephedrine', name: 'Ephedrine', concentration: 5, dosePerKg: 0.1, color: '#DEB887' },
-  { id: 'atropine', name: 'Atropine', concentration: 0.5, dosePerKg: 0.01, color: '#E0E0E0' },
-];
+type ToolType = 'ECG' | 'BP_CUFF' | 'PULSE_OX' | 'TEMP_PROBE' | 'LARYNGOSCOPE' | 'ETT' | 'MASK' | 'STIGMA' | 'SYRINGE_CUFF' | 'CIRCUIT' | 'SUCTION' | 'PROPOFOL' | 'ROCURONIUM' | 'FENTANYL' | null;
 
-const AIRWAY_ITEMS = [
-  { id: 'handle', label: 'Laryngoscope Handle' },
-  { id: 'mac3', label: 'Macintosh Blade 3' },
-  { id: 'miller2', label: 'Miller Blade 2' },
-  { id: 'stylet', label: 'Stylet' },
-  { id: 'ett70', label: 'ETT 7.0' },
-  { id: 'ett75', label: 'ETT 7.5' },
-  { id: 'ett80', label: 'ETT 8.0' },
-  { id: 'syringe', label: 'Syringe' },
-  { id: 'suction', label: 'Suction' },
-];
+interface EquipmentState {
+  ecgConnected: boolean;
+  bpConnected: boolean;
+  oximeterConnected: boolean;
+  tempConnected: boolean;
+  ivPlaced: boolean;
+  maskApplied: boolean;
+  intubated: boolean;
+  cuffInflated: boolean;
+  circuitConnected: boolean;
+}
 
-// --- UI Components ---
+// --- Constants ---
+const PATIENT_WEIGHT = 65; // kg
 
-const MonitorWaveform = ({ color, speed, amplitude }: { color: string, speed: number, amplitude: number }) => {
-  const [offset, setOffset] = useState(0);
-  useEffect(() => {
-    let frame = requestAnimationFrame(function animate() {
-      setOffset(prev => (prev + speed) % 200);
-      frame = requestAnimationFrame(animate);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [speed]);
+// --- Sub-Components (Visuals) ---
 
-  const points = useMemo(() => {
-    return Array.from({ length: 40 }, (_, i) => {
-      const x = i * 5;
-      const y = 25 + Math.sin((x + offset) * 0.2) * amplitude;
-      return `${x},${y}`;
-    }).join(' ');
-  }, [offset, amplitude]);
-
-  return (
-    <svg viewBox="0 0 200 50" className="w-full h-12">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-};
-
-const EquipmentIcon = ({ type }: { type: string }) => {
-  switch (type) {
-    case 'ECG Leads':
-      return (
-        <svg viewBox="0 0 64 64" className="w-12 h-12">
-          <circle cx="32" cy="32" r="10" fill="none" stroke="currentColor" strokeWidth="2" />
-          <path d="M10 32 L22 32 M42 32 L54 32 M32 10 L32 22 M32 42 L32 54" stroke="currentColor" strokeWidth="2" />
-          <circle cx="32" cy="32" r="3" fill="currentColor" />
+const MonitorDisplay = ({ vitals, active }: { vitals: Vitals; active: boolean }) => (
+  <div className="bg-black border-4 border-gray-700 rounded-lg p-3 w-64 shadow-2xl font-mono relative overflow-hidden">
+    <div className="flex justify-between items-start mb-2">
+      <span className="text-green-500 text-xs font-bold uppercase tracking-widest">HR</span>
+      <span className="text-green-400 text-3xl">{active ? vitals.hr : '--'}</span>
+    </div>
+    <div className="h-8 border-b border-green-900 mb-2 relative">
+      {active && (
+        <svg viewBox="0 0 100 20" className="absolute inset-0 w-full h-full">
+          <path d="M0 10 L10 10 L12 2 L15 18 L18 10 L30 10 L40 10 L42 2 L45 18 L48 10 L60 10 L70 10 L72 2 L75 18 L78 10 L100 10" 
+                fill="none" stroke="#22c55e" strokeWidth="0.5" className="animate-pulse" />
         </svg>
-      );
-    case 'BP Cuff':
-      return (
-        <svg viewBox="0 0 64 64" className="w-12 h-12">
-          <rect x="12" y="20" width="40" height="24" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
-          <path d="M52 32 L60 32" stroke="currentColor" strokeWidth="2" />
-          <rect x="20" y="25" width="24" height="14" fill="currentColor" opacity="0.2" />
-        </svg>
-      );
-    case 'Pulse Oximeter':
-      return (
-        <svg viewBox="0 0 64 64" className="w-12 h-12">
-          <rect x="20" y="15" width="24" height="34" rx="4" fill="none" stroke="currentColor" strokeWidth="2" />
-          <rect x="24" y="19" width="16" height="10" fill="red" opacity="0.5" />
-          <path d="M32 49 L32 60" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      );
-    case 'Temperature Probe':
-      return (
-        <svg viewBox="0 0 64 64" className="w-12 h-12">
-          <path d="M32 10 L32 50" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-          <circle cx="32" cy="54" r="4" fill="currentColor" />
-        </svg>
-      );
-    case 'Capnography':
-      return (
-        <svg viewBox="0 0 64 64" className="w-12 h-12">
-          <circle cx="32" cy="32" r="12" fill="none" stroke="currentColor" strokeWidth="2" />
-          <path d="M32 20 L32 10 M20 32 L10 32" stroke="currentColor" strokeWidth="2" />
-          <path d="M32 32 L45 45" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      );
-    default: return null;
-  }
-};
+      )}
+    </div>
+    <div className="flex justify-between items-start mb-2">
+      <span className="text-blue-400 text-xs font-bold uppercase tracking-widest">SpO₂</span>
+      <span className="text-blue-300 text-3xl">{active ? vitals.spo2 : '--'}</span>
+    </div>
+    <div className="flex justify-between items-start mb-2">
+      <span className="text-red-500 text-xs font-bold uppercase tracking-widest">BP</span>
+      <span className="text-red-400 text-xl">{active ? `${vitals.bp.sys}/${vitals.bp.dia}` : '--/--'}</span>
+    </div>
+    <div className="flex justify-between items-start">
+      <span className="text-yellow-500 text-xs font-bold uppercase tracking-widest">EtCO₂</span>
+      <span className="text-yellow-400 text-xl">{active && vitals.etco2 > 0 ? vitals.etco2 : '--'}</span>
+    </div>
+    {active && vitals.etco2 > 0 && (
+       <div className="h-6 mt-1 border-t border-yellow-900">
+          <svg viewBox="0 0 100 20" className="w-full h-full">
+            <path d="M0 18 Q 5 18 10 5 L 25 5 Q 30 18 35 18 L 100 18" fill="none" stroke="#eab308" strokeWidth="1" />
+          </svg>
+       </div>
+    )}
+  </div>
+);
 
-// --- Main Simulator ---
+const RealisticPatientSVG = ({ equipment }: { equipment: EquipmentState }) => (
+  <svg viewBox="0 0 800 400" className="w-full h-full drop-shadow-2xl">
+    <defs>
+      <radialGradient id="skinGrad" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#f5d0b4" />
+        <stop offset="100%" stopColor="#d2a688" />
+      </radialGradient>
+      <linearGradient id="drapeGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#2d5a5e" />
+        <stop offset="100%" stopColor="#1e3d40" />
+      </linearGradient>
+    </defs>
+    
+    {/* Operating Table */}
+    <rect x="100" y="280" width="600" height="40" fill="#4a5568" rx="5" />
+    <rect x="150" y="320" width="20" height="80" fill="#2d3748" />
+    <rect x="530" y="320" width="20" height="80" fill="#2d3748" />
 
-function ORSimulator() {
-  const [phase, setPhase] = useState<Phase>('PREPARATION');
-  const [attached, setAttached] = useState<string[]>([]);
-  const [activeTool, setActiveTool] = useState<string | null>(null);
-  const [logs, setLogs] = useState<{ msg: string; type: 'success' | 'error' | 'info' }[]>([]);
-  const [patientStatus, setPatientStatus] = useState({ isAsleep: false, isIntubated: false });
-  const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null);
-  const [drugDose, setDrugDose] = useState("");
-  const [airwaySequence, setAirwaySequence] = useState<string[]>([]);
-  
-  const patientWeight = 80;
+    {/* Body (Draped) */}
+    <path d="M150 280 Q 400 240 650 280 L 650 310 L 150 310 Z" fill="url(#drapeGrad)" />
+    
+    {/* Head & Neck Area */}
+    <ellipse cx="140" cy="250" rx="35" ry="45" fill="url(#skinGrad)" /> {/* Face */}
+    <path d="M110 220 Q 140 200 170 220" fill="#4299e1" stroke="#2b6cb0" /> {/* Surgical Cap */}
+    <rect x="110" y="295" width="60" height="15" rx="5" fill="#e2e8f0" /> {/* Pillow */}
 
-  const [vitals, setVitals] = useState({
-    hr: 75, spo2: 98, bpSys: 120, bpDia: 80, bpMap: 93, rr: 14, temp: 36.5,
-    etco2: 0, fio2: 21, mac: 0.0, tv: 0, peep: 0
+    {/* Equipment Visual Overlay */}
+    {equipment.ecgConnected && (
+      <g>
+        <circle cx="145" cy="265" r="3" fill="white" stroke="gray" strokeWidth="0.5" />
+        <path d="M145 265 L 80 200" stroke="white" strokeWidth="0.5" strokeDasharray="2" />
+      </g>
+    )}
+    {equipment.oximeterConnected && (
+      <rect x="580" y="270" width="10" height="5" fill="red" opacity="0.6" />
+    )}
+    {equipment.bpConnected && (
+      <rect x="500" y="255" width="40" height="30" fill="#2d3748" rx="2" transform="rotate(-10 500 255)" />
+    )}
+    {equipment.maskApplied && !equipment.intubated && (
+      <ellipse cx="140" cy="265" rx="15" ry="20" fill="rgba(255,255,255,0.4)" stroke="white" />
+    )}
+    {equipment.intubated && (
+      <g>
+        <rect x="135" y="255" width="6" height="40" fill="#cbd5e0" transform="rotate(20 135 255)" />
+        <circle cx="155" cy="290" r="4" fill="#f56565" /> {/* Pilot balloon */}
+      </g>
+    )}
+    {equipment.circuitConnected && (
+      <path d="M140 270 Q 200 350 300 350" fill="none" stroke="#90cdf4" strokeWidth="8" strokeLinecap="round" />
+    )}
+  </svg>
+);
+
+// --- Main Component ---
+
+export default function AnesthesiaModule() {
+  const [equipment, setEquipment] = useState<EquipmentState>({
+    ecgConnected: false,
+    bpConnected: false,
+    oximeterConnected: false,
+    tempConnected: false,
+    ivPlaced: false,
+    maskApplied: false,
+    intubated: false,
+    cuffInflated: false,
+    circuitConnected: false,
   });
 
-  const addLog = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setLogs(prev => [{ msg, type }, ...prev].slice(0, 5));
-  };
+  const [vitals, setVitals] = useState<Vitals>({
+    hr: 82,
+    spo2: 98,
+    bp: { sys: 122, dia: 78 },
+    rr: 14,
+    etco2: 0,
+    temp: 36.8
+  });
 
-  const handleToolSelection = (tool: string) => {
-    setActiveTool(tool);
-    addLog(`Tool selected: ${tool}. Click on the patient to attach.`, 'info');
-  };
+  const [selectedTool, setSelectedTool] = useState<ToolType>(null);
+  const [activePanel, setActivePanel] = useState<'NONE' | 'AIRWAY' | 'DRUGS'>('NONE');
+  const [logs, setLogs] = useState<string[]>(["Patient arrived in OR. 65kg Adult Male."]);
+  const [drugDose, setDrugDose] = useState("");
+  const [simulationStep, setSimulationStep] = useState(0);
 
-  const handlePatientInteraction = (zone: string) => {
-    if (!activeTool) return;
+  const monitorActive = equipment.ecgConnected && equipment.oximeterConnected;
 
-    const correctMap: Record<string, string> = {
-      'ECG Leads': 'chest',
-      'BP Cuff': 'arm',
-      'Pulse Oximeter': 'finger',
-      'Temperature Probe': 'head',
-      'Capnography': 'head'
-    };
-
-    if (correctMap[activeTool] === zone) {
-      if (!attached.includes(activeTool)) {
-        setAttached(prev => [...prev, activeTool]);
-        addLog(`✅ ${activeTool} correctly attached.`, 'success');
-      }
-    } else {
-      addLog(`❌ Incorrect placement for ${activeTool}.`, 'error');
+  // Simulation Logic
+  useEffect(() => {
+    if (monitorActive) {
+      const interval = setInterval(() => {
+        setVitals(prev => ({
+          ...prev,
+          hr: prev.hr + (Math.random() > 0.5 ? 1 : -1),
+          spo2: equipment.intubated ? 100 : (equipment.maskApplied ? 99 : 97),
+          etco2: equipment.circuitConnected ? 38 : 0
+        }));
+      }, 3000);
+      return () => clearInterval(interval);
     }
-    setActiveTool(null);
-  };
+  }, [monitorActive, equipment.intubated, equipment.maskApplied, equipment.circuitConnected]);
 
-  const handleDrugAdmin = () => {
-    if (!selectedDrug) return;
-    const dose = parseFloat(drugDose);
-    const target = selectedDrug.dosePerKg * patientWeight;
+  const addLog = (msg: string) => setLogs(prev => [msg, ...prev].slice(0, 5));
 
-    if (Math.abs(dose - target) <= target * 0.1) {
-      addLog(`✅ Administered ${dose}mg of ${selectedDrug.name}.`, 'success');
-      if (selectedDrug.id === 'propofol') {
-        setPatientStatus(p => ({ ...p, isAsleep: true }));
-        setVitals(v => ({ ...v, rr: 0, hr: 65, bpSys: 100, bpDia: 60 }));
-        addLog("Patient is now unconscious. Onset of apnea.", 'info');
+  const handlePatientClick = (area: string) => {
+    if (!selectedTool) return;
+
+    if (selectedTool === 'ECG' && area === 'chest') {
+      setEquipment(e => ({ ...e, ecgConnected: true }));
+      addLog("ECG leads placed.");
+    } else if (selectedTool === 'BP_CUFF' && area === 'arm') {
+      setEquipment(e => ({ ...e, bpConnected: true }));
+      addLog("NIBP cuff attached.");
+    } else if (selectedTool === 'PULSE_OX' && area === 'finger') {
+      setEquipment(e => ({ ...e, oximeterConnected: true }));
+      addLog("Pulse oximeter attached.");
+    } else if (selectedTool === 'MASK' && area === 'face') {
+      setEquipment(e => ({ ...e, maskApplied: true }));
+      addLog("Pre-oxygenation started via mask.");
+    } else if (selectedTool === 'LARYNGOSCOPE' && area === 'face') {
+      if (!equipment.maskApplied) {
+        addLog("Error: Must pre-oxygenate and remove mask first.");
+      } else {
+        setEquipment(e => ({ ...e, maskApplied: false }));
+        addLog("Laryngoscopy performed. Grade I view.");
       }
-      setSelectedDrug(null);
-      setDrugDose("");
-    } else {
-      addLog(`❌ Calculation Error. Target was ${target.toFixed(1)}mg.`, 'error');
+    } else if (selectedTool === 'ETT' && area === 'face') {
+      setEquipment(e => ({ ...e, intubated: true }));
+      addLog("ETT passed through vocal cords.");
+    } else if (selectedTool === 'CIRCUIT' && area === 'face') {
+      if (equipment.intubated) {
+        setEquipment(e => ({ ...e, circuitConnected: true }));
+        addLog("Breathing circuit connected. Capnography active.");
+      } else {
+        addLog("Error: Connect circuit to ETT or Mask.");
+      }
     }
+    setSelectedTool(null);
   };
 
-  const handleAirwayStep = (stepId: string) => {
-    const last = airwaySequence[airwaySequence.length - 1];
+  const administerDrug = (name: string, dose: number, concentration: number) => {
+    const requiredDose = parseFloat(drugDose);
+    if (isNaN(requiredDose)) {
+      alert("Enter a numeric dose.");
+      return;
+    }
+    addLog(`Administered ${name}: ${requiredDose}mg (${(requiredDose/concentration).toFixed(1)}ml)`);
+    setDrugDose("");
+    setActivePanel('NONE');
     
-    // Logic: Handle -> Blade -> ETT
-    if (stepId.includes('mac') || stepId.includes('miller')) {
-      if (!airwaySequence.includes('handle')) {
-        addLog("❌ You need the laryngoscope handle first.", "error"); return;
-      }
-    }
-    if (stepId.includes('ett')) {
-      if (!airwaySequence.some(s => s.includes('mac') || s.includes('miller'))) {
-        addLog("❌ Perform laryngoscopy before intubation.", "error"); return;
-      }
-    }
-
-    setAirwaySequence(prev => [...prev, stepId]);
-    addLog(`Action: ${stepId} performed.`, 'info');
-
-    if (stepId.includes('ett')) {
-      setPatientStatus(p => ({ ...p, isIntubated: true }));
-      setVitals(v => ({ ...v, etco2: 38, fio2: 100, tv: 480, mac: 1.0, rr: 12 }));
-      setPhase('MAINTENANCE');
-      addLog("✅ Intubation successful. EtCO2 confirmed.", "success");
+    if (name === 'Propofol') {
+        setTimeout(() => {
+            setVitals(v => ({...v, hr: v.hr - 10, bp: {sys: v.bp.sys - 15, dia: v.bp.dia - 10}}));
+            addLog("Patient is unconscious. Apnea noted.");
+        }, 2000);
     }
   };
-
-  const monitorReady = attached.includes('ECG Leads') && attached.includes('BP Cuff') && attached.includes('Pulse Oximeter');
 
   return (
-    <div className="flex flex-col h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans">
-      {/* Header */}
-      <header className="h-16 bg-[#1e293b] border-b border-slate-700 flex items-center justify-between px-6 shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-500 p-2 rounded-lg shadow-lg shadow-blue-500/20">
-            <Stethoscope className="text-white" size={24} />
+    <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans">
+      
+      {/* Top Header / Status */}
+      <div className="h-14 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6 shadow-md">
+        <h1 className="text-xl font-bold tracking-tight text-blue-400">OR-SIM: ADVANCED ANESTHESIA</h1>
+        <div className="flex gap-4 items-center">
+          <div className="bg-slate-900 px-3 py-1 rounded border border-slate-600">
+            <span className="text-xs text-slate-400 mr-2">PATIENT:</span>
+            <span className="font-mono text-sm">65kg Adult Male</span>
           </div>
-          <div>
-            <h1 className="font-black text-lg tracking-tight">VIRTUAL OR SIMULATOR</h1>
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Clinical Training Module</p>
-          </div>
+          <div className="text-sm font-bold text-red-400 animate-pulse">LIVE SIMULATION</div>
         </div>
-        <div className="flex gap-6">
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] text-slate-500 uppercase">Phase</span>
-            <span className="text-blue-400 font-bold text-sm">{phase}</span>
-          </div>
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] text-slate-500 uppercase">Patient</span>
-            <span className="text-slate-200 font-bold text-sm">Adult Male (80kg)</span>
-          </div>
-        </div>
-      </header>
+      </div>
 
-      {/* Main Content */}
-      <main className="flex-1 flex p-4 gap-4 overflow-hidden">
+      <div className="flex-1 flex relative">
         
-        {/* Left: Interactive Room */}
-        <div className="flex-[3] relative bg-[#1e293b] rounded-3xl border border-slate-700 shadow-inner overflow-hidden">
-          {/* OR Background Graphics */}
-          <div className="absolute top-10 left-10 w-48 h-72 bg-slate-800 rounded-lg border border-slate-700 p-2">
-            <div className="h-24 bg-black rounded p-1 flex flex-col gap-1">
-              <div className="h-1 bg-green-500 w-1/2 rounded" />
-              <div className="h-1 bg-blue-500 w-2/3 rounded" />
-            </div>
-            <div className="mt-4 flex flex-col gap-2">
-              <div className="h-4 bg-slate-700 rounded" />
-              <div className="h-4 bg-slate-700 rounded" />
-              <div className="flex-1 flex items-end gap-2 mt-10">
-                <div className="w-2 h-16 bg-blue-600 rounded-t" />
-                <div className="w-2 h-12 bg-green-600 rounded-t" />
-              </div>
-            </div>
-          </div>
-
-          {/* Patient SVG */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <svg viewBox="0 0 800 400" className="w-[90%] h-[90%] drop-shadow-2xl">
-              <rect x="100" y="280" width="600" height="20" fill="#475569" rx="4" />
-              <rect x="380" y="300" width="40" height="100" fill="#334155" />
-              
-              {/* Patient Body */}
-              <g transform="translate(150, 150)">
-                <rect x="20" y="100" width="80" height="25" rx="10" fill="#f8fafc" /> {/* Pillow */}
-                <ellipse cx="60" cy="75" rx="35" ry="45" fill="#fde68a" /> {/* Head */}
-                <path d="M25 70 Q60 20 95 70" fill="#0891b2" /> {/* Cap */}
-                
-                {/* Eyes */}
-                {patientStatus.isAsleep ? (
-                  <path d="M45 75 Q52 75 60 75 M70 75 Q77 75 85 75" stroke="#475569" strokeWidth="2" fill="none" />
-                ) : (
-                  <>
-                    <circle cx="52" cy="75" r="2" fill="#1e293b" />
-                    <circle cx="77" cy="75" r="2" fill="#1e293b" />
-                  </>
-                )}
-
-                {/* Body & Drapes */}
-                <path d="M95 120 L500 120 L500 220 L95 220 Z" fill="#0e7490" />
-                <path d="M95 120 Q300 110 500 120" stroke="#155e75" strokeWidth="2" fill="none" />
-
-                {/* Visible Equipment */}
-                {attached.includes('ECG Leads') && (
-                  <g transform="translate(130, 140)">
-                    <circle cx="10" cy="10" r="5" fill="white" stroke="gray" />
-                    <circle cx="40" cy="30" r="5" fill="white" stroke="gray" />
-                    <path d="M10 10 L-50 -50" stroke="#ef4444" strokeWidth="1" />
-                    <path d="M40 30 L-50 -50" stroke="#22c55e" strokeWidth="1" />
-                  </g>
-                )}
-                {attached.includes('BP Cuff') && <rect x="220" y="120" width="60" height="40" fill="#334155" rx="4" />}
-                {attached.includes('Pulse Oximeter') && <rect x="490" y="160" width="12" height="8" fill="#ef4444" rx="2" className="animate-pulse" />}
-              </g>
-            </svg>
-          </div>
-
-          {/* Interaction Zones (Hitboxes) */}
-          <button onClick={() => handlePatientInteraction('head')} className="absolute top-[35%] left-[20%] w-24 h-24 rounded-full hover:bg-white/5 transition-all cursor-crosshair" title="Head Area" />
-          <button onClick={() => handlePatientInteraction('chest')} className="absolute top-[45%] left-[32%] w-32 h-32 rounded-xl hover:bg-white/5 transition-all cursor-crosshair" title="Chest Area" />
-          <button onClick={() => handlePatientInteraction('arm')} className="absolute top-[55%] left-[45%] w-40 h-20 rounded-xl hover:bg-white/5 transition-all cursor-crosshair" title="Right Arm" />
-          <button onClick={() => handlePatientInteraction('finger')} className="absolute top-[68%] left-[75%] w-12 h-12 rounded-full hover:bg-white/5 transition-all cursor-crosshair" title="Finger" />
-
-          {/* Logs Overlay */}
-          <div className="absolute bottom-6 left-6 w-80 space-y-2 pointer-events-none">
-            {logs.map((log, i) => (
-              <div key={i} className={`p-2 rounded-lg text-xs border flex items-center gap-2 backdrop-blur-md animate-in slide-in-from-left duration-300 ${
-                log.type === 'success' ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-200' :
-                log.type === 'error' ? 'bg-red-900/40 border-red-500/50 text-red-200' : 'bg-slate-900/80 border-slate-700 text-slate-300'
-              }`}>
-                {log.type === 'success' ? <CheckCircle2 size={14}/> : <AlertCircle size={14}/>}
-                {log.msg}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: Controls & Monitor */}
-        <div className="flex-[2] flex flex-col gap-4 overflow-y-auto">
+        {/* Left Interaction: Equipment Station */}
+        <div className="w-80 bg-slate-800/50 p-4 border-r border-slate-700 flex flex-col gap-4 overflow-y-auto">
           
-          {/* Patient Monitor */}
-          <div className="h-80 bg-black rounded-3xl border-4 border-slate-800 p-5 font-mono shadow-2xl relative overflow-hidden">
-            {!monitorReady ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-700">
-                <Zap size={48} className="animate-pulse mb-2" />
-                <p className="text-xs font-bold tracking-widest uppercase">System Standby: Connect Monitors</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-12 h-full gap-4">
-                <div className="col-span-8 space-y-4">
-                  <div className="text-emerald-400">
-                    <div className="flex justify-between items-center text-xs"><span>ECG II</span><span className="text-xl font-bold">{vitals.hr}</span></div>
-                    <MonitorWaveform color="#10b981" speed={15} amplitude={12} />
-                  </div>
-                  <div className="text-blue-400">
-                    <div className="flex justify-between items-center text-xs"><span>SpO2 %</span><span className="text-xl font-bold">{vitals.spo2}</span></div>
-                    <MonitorWaveform color="#3b82f6" speed={10} amplitude={8} />
-                  </div>
-                  <div className="text-yellow-500">
-                    <div className="flex justify-between items-center text-xs"><span>EtCO2</span><span className="text-xl font-bold">{vitals.etco2}</span></div>
-                    <MonitorWaveform color="#eab308" speed={5} amplitude={10} />
-                  </div>
-                </div>
-                <div className="col-span-4 bg-slate-900/50 rounded-xl p-3 flex flex-col justify-between border border-slate-800">
-                  <div className="text-red-500">
-                    <p className="text-[10px]">NIBP</p>
-                    <p className="text-2xl font-black">{vitals.bpSys}/{vitals.bpDia}</p>
-                    <p className="text-xs">MAP: {vitals.bpMap}</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-[10px]">
-                    <div><p className="text-slate-500">RR</p><p className="text-white text-sm">{vitals.rr}</p></div>
-                    <div><p className="text-slate-500">TEMP</p><p className="text-orange-400 text-sm">{vitals.temp}</p></div>
-                    <div><p className="text-slate-500">FiO2</p><p className="text-blue-300 text-sm">{vitals.fio2}%</p></div>
-                    <div><p className="text-slate-500">MAC</p><p className="text-purple-400 text-sm">{vitals.mac}</p></div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <section>
+            <h3 className="text-xs font-bold text-slate-400 mb-2 uppercase">Mayo Stand (Monitoring)</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <EquipmentButton 
+                label="ECG Leads" 
+                active={equipment.ecgConnected} 
+                selected={selectedTool === 'ECG'}
+                onClick={() => setSelectedTool('ECG')} 
+              />
+              <EquipmentButton 
+                label="NIBP Cuff" 
+                active={equipment.bpConnected} 
+                selected={selectedTool === 'BP_CUFF'}
+                onClick={() => setSelectedTool('BP_CUFF')} 
+              />
+              <EquipmentButton 
+                label="Pulse Ox" 
+                active={equipment.oximeterConnected} 
+                selected={selectedTool === 'PULSE_OX'}
+                onClick={() => setSelectedTool('PULSE_OX')} 
+              />
+              <EquipmentButton 
+                label="Temp Probe" 
+                active={equipment.tempConnected} 
+                selected={selectedTool === 'TEMP_PROBE'}
+                onClick={() => setSelectedTool('TEMP_PROBE')} 
+              />
+            </div>
+          </section>
 
-          {/* Interaction Cards */}
-          <div className="flex-1 bg-[#1e293b] rounded-3xl border border-slate-700 p-5 flex flex-col shadow-xl">
-            <nav className="flex gap-1 bg-slate-950 p-1 rounded-xl mb-6">
-              {['PREPARATION', 'INDUCTION', 'INTUBATION'].map(p => (
-                <button key={p} className={`flex-1 py-2 text-[10px] font-black rounded-lg transition-all ${phase === p ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
-                  {p}
-                </button>
-              ))}
-            </nav>
+          <section className="mt-4">
+            <h3 className="text-xs font-bold text-slate-400 mb-2 uppercase">Equipment Carts</h3>
+            <button 
+                onClick={() => setActivePanel('AIRWAY')}
+                className="w-full mb-2 bg-blue-600 hover:bg-blue-500 p-3 rounded-lg flex items-center justify-between transition-colors shadow-lg group">
+                <span className="font-bold">Airway Cart</span>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+            </button>
+            <button 
+                onClick={() => setActivePanel('DRUGS')}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 p-3 rounded-lg flex items-center justify-between transition-colors shadow-lg group">
+                <span className="font-bold">Drug Drawer</span>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+            </button>
+          </section>
 
-            <div className="flex-1 overflow-y-auto pr-2">
-              {phase === 'PREPARATION' && (
-                <div className="grid grid-cols-2 gap-4">
-                  {['ECG Leads', 'BP Cuff', 'Pulse Oximeter', 'Temperature Probe', 'Capnography'].map(tool => (
-                    <button key={tool} onClick={() => handleToolSelection(tool)} className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${
-                      attached.includes(tool) ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' : 
-                      activeTool === tool ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-800 border-slate-700 hover:border-slate-500'
-                    }`}>
-                      <EquipmentIcon type={tool} />
-                      <span className="text-[10px] font-bold uppercase">{tool}</span>
-                    </button>
-                  ))}
-                  {monitorReady && (
-                    <button onClick={() => setPhase('INDUCTION')} className="col-span-2 bg-blue-600 hover:bg-blue-500 p-4 rounded-2xl font-black text-sm uppercase tracking-widest mt-4 flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/20">
-                      START INDUCTION <ArrowRight size={20} />
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {phase === 'INDUCTION' && (
-                <div className="space-y-4">
-                  {!selectedDrug ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      {DRUGS.map(d => (
-                        <button key={d.id} onClick={() => setSelectedDrug(d)} className="p-3 bg-slate-800 border border-slate-700 rounded-xl text-left hover:border-blue-500 transition-all group">
-                          <div className="w-8 h-1 mb-2 rounded-full" style={{ background: d.color }} />
-                          <p className="text-xs font-bold group-hover:text-blue-400">{d.name}</p>
-                          <p className="text-[10px] text-slate-500">{d.concentration} mg/ml</p>
-                        </button>
-                      ))}
+          {/* Logs */}
+          <div className="mt-auto pt-4 border-t border-slate-700">
+            <h3 className="text-[10px] font-bold text-slate-500 mb-2 uppercase">Clinical Log</h3>
+            <div className="bg-black/40 p-2 rounded text-xs font-mono h-32 overflow-y-auto">
+                {logs.map((log, i) => (
+                    <div key={i} className="mb-1 text-slate-300 border-l-2 border-blue-500 pl-2">
+                        {log}
                     </div>
-                  ) : (
-                    <div className="bg-slate-950 p-6 rounded-2xl border border-blue-500/50 animate-in zoom-in-95">
-                      <div className="flex justify-between mb-4">
-                        <h3 className="font-black text-blue-400 uppercase tracking-tight">{selectedDrug.name}</h3>
-                        <button onClick={() => setSelectedDrug(null)}><XCircle className="text-slate-500" /></button>
-                      </div>
-                      <div className="text-[10px] text-slate-500 mb-4 bg-slate-900 p-3 rounded-lg border border-slate-800">
-                        <p>PATIENT WEIGHT: {patientWeight}kg</p>
-                        <p>RECOMMENDED DOSE: {selectedDrug.dosePerKg} mg/kg</p>
-                      </div>
-                      <label className="text-[10px] text-slate-500 uppercase font-bold mb-2 block">Enter Dose (mg)</label>
-                      <input 
-                        type="number" value={drugDose} onChange={(e) => setDrugDose(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl text-xl font-bold mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
-                        placeholder="0.0"
-                      />
-                      <button onClick={handleDrugAdmin} className="w-full bg-blue-600 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-blue-500 shadow-xl shadow-blue-600/20">
-                        INJECT BOLUS
-                      </button>
-                    </div>
-                  )}
-                  {patientStatus.isAsleep && !selectedDrug && (
-                    <button onClick={() => setPhase('INTUBATION')} className="w-full bg-orange-600 hover:bg-orange-500 p-4 rounded-2xl font-black text-sm uppercase mt-4 flex items-center justify-center gap-2 shadow-lg shadow-orange-600/20">
-                      SECURE AIRWAY <Wind size={20} />
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {phase === 'INTUBATION' && (
-                <div className="grid grid-cols-2 gap-2">
-                  {AIRWAY_ITEMS.map(item => (
-                    <button key={item.id} onClick={() => handleAirwayStep(item.id)} className={`p-3 rounded-xl border text-[10px] font-black uppercase transition-all ${
-                      airwaySequence.includes(item.id) ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-slate-800 border-slate-700 hover:border-slate-500'
-                    }`}>
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {phase === 'MAINTENANCE' && (
-                <div className="text-center p-8 space-y-6">
-                  <div className="bg-emerald-500/20 p-6 rounded-full inline-block animate-bounce">
-                    <CheckCircle2 size={48} className="text-emerald-500" />
-                  </div>
-                  <h2 className="text-xl font-black tracking-tight uppercase">Case Stabilized</h2>
-                  <p className="text-sm text-slate-400">The patient is secured and vitals are stable. You have successfully completed the induction sequence.</p>
-                  <button onClick={() => window.location.reload()} className="bg-slate-700 px-6 py-3 rounded-xl font-bold hover:bg-slate-600 transition-all">
-                    RESTART SIMULATION
-                  </button>
-                </div>
-              )}
+                ))}
             </div>
           </div>
         </div>
-      </main>
 
-      {/* Footer Info Bar */}
-      <footer className="h-10 bg-slate-950 border-t border-slate-800 flex items-center justify-between px-8 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-        <div className="flex gap-6">
-          <span className="flex items-center gap-1"><Droplet size={12} className="text-blue-500"/> IV Access: 18G Left Hand</span>
-          <span className="flex items-center gap-1"><Wind size={12} className="text-emerald-500"/> Gas: O2 100% 6L/m</span>
+        {/* Center: Main OR View */}
+        <div className="flex-1 bg-slate-950 relative flex items-center justify-center p-8">
+            
+            {/* Background OR Elements */}
+            <div className="absolute inset-0 opacity-20 pointer-events-none">
+                <div className="absolute top-10 left-20 w-32 h-32 bg-white rounded-full blur-3xl" />
+                <div className="absolute top-40 right-20 w-48 h-48 bg-blue-500 rounded-full blur-3xl" />
+                {/* Wall outlets */}
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col gap-4 pl-4">
+                    <div className="w-8 h-8 rounded-full bg-green-600 border-2 border-slate-400 shadow-inner" />
+                    <div className="w-8 h-8 rounded-full bg-yellow-400 border-2 border-slate-400 shadow-inner" />
+                    <div className="w-8 h-8 rounded-full bg-blue-400 border-2 border-slate-400 shadow-inner" />
+                </div>
+            </div>
+
+            {/* Surgical Light (Above Patient) */}
+            <div className="absolute top-10 left-1/2 -translate-x-1/2 w-64 h-8 bg-slate-800 rounded-full border-4 border-slate-600 shadow-[0_0_100px_rgba(255,255,255,0.2)] flex justify-around items-center px-4">
+                <div className="w-6 h-6 bg-yellow-100 rounded-full blur-[2px]" />
+                <div className="w-6 h-6 bg-yellow-100 rounded-full blur-[2px]" />
+                <div className="w-6 h-6 bg-yellow-100 rounded-full blur-[2px]" />
+            </div>
+
+            {/* Patient Interaction Layer */}
+            <div className="relative w-full max-w-4xl aspect-[2/1] group">
+                <RealisticPatientSVG equipment={equipment} />
+                
+                {/* Clickable Zones */}
+                <button 
+                  onClick={() => handlePatientClick('face')}
+                  className="absolute left-[12%] top-[55%] w-24 h-24 rounded-full hover:bg-white/10 border-2 border-transparent hover:border-blue-400 transition-all cursor-crosshair group-active:scale-95"
+                  title="Face/Airway"
+                />
+                <button 
+                  onClick={() => handlePatientClick('chest')}
+                  className="absolute left-[20%] top-[65%] w-32 h-20 rounded-lg hover:bg-white/10 border-2 border-transparent hover:border-blue-400 transition-all cursor-crosshair"
+                  title="Chest"
+                />
+                <button 
+                  onClick={() => handlePatientClick('arm')}
+                  className="absolute left-[50%] top-[65%] w-40 h-16 hover:bg-white/10 border-2 border-transparent hover:border-blue-400 transition-all cursor-crosshair"
+                  title="Arm"
+                />
+                <button 
+                  onClick={() => handlePatientClick('finger')}
+                  className="absolute left-[65%] top-[68%] w-12 h-12 rounded-full hover:bg-white/10 border-2 border-transparent hover:border-blue-400 transition-all cursor-crosshair"
+                  title="Hand"
+                />
+            </div>
+
+            {/* Floating Monitor (Realism) */}
+            <div className="absolute top-20 right-20">
+                <MonitorDisplay vitals={vitals} active={monitorActive} />
+                <div className="mt-4 bg-slate-800 p-2 rounded text-[10px] text-slate-400 text-center uppercase tracking-tighter">
+                   Anesthesia Workstation V2.4
+                </div>
+            </div>
+
+            {/* Interaction State Hint */}
+            {selectedTool && (
+                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 bg-blue-600 px-6 py-3 rounded-full shadow-2xl animate-bounce flex items-center gap-3">
+                    <span className="font-bold">PLACE {selectedTool.replace('_', ' ')} ON PATIENT</span>
+                    <button onClick={() => setSelectedTool(null)} className="bg-black/20 rounded-full p-1 text-xs">ESC</button>
+                </div>
+            )}
         </div>
-        <div>
-          SIMULATION_TIME: <span className="text-slate-300 font-mono">00:14:22</span>
-        </div>
-      </footer>
+      </div>
+
+      {/* Overlays / Zoom views */}
+      {activePanel === 'AIRWAY' && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-10">
+              <div className="bg-slate-800 w-full max-w-4xl rounded-2xl p-8 border border-slate-600 shadow-2xl relative">
+                  <button onClick={() => setActivePanel('NONE')} className="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl">×</button>
+                  <h2 className="text-2xl font-bold mb-6 text-blue-400 flex items-center gap-2">
+                      <div className="w-2 h-8 bg-blue-400" /> Airway Equipment Cart
+                  </h2>
+                  <div className="grid grid-cols-4 gap-6">
+                      <ToolCard 
+                        title="Face Mask" 
+                        desc="Sized for adult male" 
+                        icon={<MaskIcon />} 
+                        onClick={() => { setSelectedTool('MASK'); setActivePanel('NONE'); }} 
+                      />
+                      <ToolCard 
+                        title="Laryngoscope" 
+                        desc="Mac 3 blade attached" 
+                        icon={<LaryngoscopeIcon />} 
+                        onClick={() => { setSelectedTool('LARYNGOSCOPE'); setActivePanel('NONE'); }} 
+                      />
+                      <ToolCard 
+                        title="Endotracheal Tube" 
+                        desc="7.5mm Cuffed" 
+                        icon={<ETTIcon />} 
+                        onClick={() => { setSelectedTool('ETT'); setActivePanel('NONE'); }} 
+                      />
+                      <ToolCard 
+                        title="Circuit" 
+                        desc="Anesthesia Circuit (Y-Piece)" 
+                        icon={<CircuitIcon />} 
+                        onClick={() => { setSelectedTool('CIRCUIT'); setActivePanel('NONE'); }} 
+                      />
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {activePanel === 'DRUGS' && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-10">
+              <div className="bg-slate-800 w-full max-w-2xl rounded-2xl p-8 border border-slate-600 shadow-2xl relative">
+                  <button onClick={() => setActivePanel('NONE')} className="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl">×</button>
+                  <h2 className="text-2xl font-bold mb-2 text-emerald-400">Anesthesia Drug Drawer</h2>
+                  <p className="text-slate-400 mb-6 text-sm italic">Note: Patient weight is {PATIENT_WEIGHT}kg. Calculate dose precisely.</p>
+                  
+                  <div className="space-y-4">
+                      <DrugEntry 
+                        name="Propofol" 
+                        concentration="10mg/ml" 
+                        suggested="2mg/kg"
+                        value={drugDose}
+                        onChange={setDrugDose}
+                        onAdminister={() => administerDrug('Propofol', 130, 10)}
+                      />
+                      <DrugEntry 
+                        name="Fentanyl" 
+                        concentration="50mcg/ml" 
+                        suggested="1-2mcg/kg"
+                        value={drugDose}
+                        onChange={setDrugDose}
+                        onAdminister={() => administerDrug('Fentanyl', 100, 50)}
+                      />
+                      <DrugEntry 
+                        name="Rocuronium" 
+                        concentration="10mg/ml" 
+                        suggested="0.6mg/kg"
+                        value={drugDose}
+                        onChange={setDrugDose}
+                        onAdminister={() => administerDrug('Rocuronium', 40, 10)}
+                      />
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 }
+
+// --- Internal UI Helpers ---
+
+function EquipmentButton({ label, active, selected, onClick }: { label: string, active: boolean, selected: boolean, onClick: () => void }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`p-3 rounded border text-xs font-bold transition-all ${
+        active 
+        ? 'bg-green-900/40 border-green-500 text-green-400' 
+        : selected 
+          ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
+          : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'
+      }`}
+    >
+      {label}
+      {active && <span className="block text-[8px] mt-1 text-green-300 opacity-70">CONNECTED</span>}
+    </button>
+  );
+}
+
+function ToolCard({ title, desc, icon, onClick }: { title: string, desc: string, icon: React.ReactNode, onClick: () => void }) {
+  return (
+    <button 
+        onClick={onClick}
+        className="bg-slate-700/50 p-4 rounded-xl border border-slate-600 hover:bg-slate-600 hover:border-blue-400 transition-all text-left flex flex-col items-center gap-4 group">
+        <div className="w-20 h-20 flex items-center justify-center group-hover:scale-110 transition-transform">
+            {icon}
+        </div>
+        <div>
+            <h4 className="font-bold text-sm text-slate-100">{title}</h4>
+            <p className="text-[10px] text-slate-400 mt-1">{desc}</p>
+        </div>
+    </button>
+  );
+}
+
+function DrugEntry({ name, concentration, suggested, value, onChange, onAdminister }: any) {
+  return (
+    <div className="flex items-center justify-between bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+      <div>
+        <div className="font-bold text-slate-100">{name}</div>
+        <div className="text-[10px] text-slate-500 uppercase">{concentration} | Goal: {suggested}</div>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex flex-col items-end">
+            <input 
+                type="number" 
+                placeholder="mg"
+                className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-20 text-right text-emerald-400 focus:outline-none focus:border-emerald-500"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+            />
+            <span className="text-[8px] text-slate-500 mt-1 uppercase tracking-tighter">Enter Dose (mg)</span>
+        </div>
+        <button 
+            onClick={onAdminister}
+            className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded font-bold text-sm transition-colors shadow-lg active:scale-95">
+            PUSH
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Icons (Detailed SVG) ---
+
+const MaskIcon = () => (
+  <svg viewBox="0 0 64 64" className="w-full h-full">
+    <ellipse cx="32" cy="32" rx="20" ry="24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="3" />
+    <circle cx="32" cy="20" r="4" fill="rgba(255,255,255,0.3)" />
+  </svg>
+);
+
+const LaryngoscopeIcon = () => (
+  <svg viewBox="0 0 64 64" className="w-full h-full" transform="rotate(-45)">
+    <rect x="28" y="30" width="8" height="30" fill="#a0aec0" rx="2" />
+    <path d="M30 30 Q 30 10 60 10" fill="none" stroke="#cbd5e0" strokeWidth="6" strokeLinecap="round" />
+  </svg>
+);
+
+const ETTIcon = () => (
+  <svg viewBox="0 0 64 64" className="w-full h-full">
+    <path d="M10 50 Q 30 30 50 10" fill="none" stroke="#90cdf4" strokeWidth="4" />
+    <circle cx="15" cy="55" r="4" fill="#f56565" />
+    <path d="M15 55 L 20 40" stroke="#f56565" strokeWidth="1" />
+  </svg>
+);
+
+const CircuitIcon = () => (
+  <svg viewBox="0 0 64 64" className="w-full h-full">
+    <path d="M10 32 L 30 32 M 30 32 L 50 12 M 30 32 L 50 52" fill="none" stroke="#4299e1" strokeWidth="6" strokeLinecap="round" />
+    <rect x="5" y="24" width="8" height="16" fill="#2b6cb0" />
+  </svg>
+);
