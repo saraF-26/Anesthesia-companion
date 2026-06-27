@@ -1,492 +1,481 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
 
-type Step = "brief" | "preop" | "monitoring" | "drugs" | "airway" | "machine" | "done";
+// --- Types & Constants ---
 
-const patient = {
-  age: "27 years",
-  sex: "Female",
-  weight: 65,
-  height: "165 cm",
-  asa: "ASA I",
-  surgery: "Elective laparoscopic cholecystectomy",
-  allergies: "None",
-  pmh: "No significant past medical history",
-  meds: "No regular medications",
-  airway: "Mallampati II, mouth opening >3 fingers, normal neck movement",
-  lastMeal: "Light meal 8 hours ago, clear fluids 3 hours ago",
+type SimulationStep = 'CHART' | 'CHECKLIST' | 'MONITORS' | 'INDUCTION' | 'AIRWAY' | 'MAINTENANCE';
+
+interface VitalSigns {
+  hr: number;
+  spo2: number;
+  bpSys: number;
+  bpDia: number;
+  rr: number;
+  temp: number;
+  etco2: number;
+  fio2: number;
+  mac: number;
+  vt: number;
+  peep: number;
+}
+
+const PATIENT_WEIGHT = 65; // kg
+
+const DRUGS = [
+  { id: 'propofol', name: 'Propofol', dosePerKg: 2, unit: 'mg', correct: true },
+  { id: 'fentanyl', name: 'Fentanyl', dosePerKg: 2, unit: 'mcg', correct: true },
+  { id: 'rocuronium', name: 'Rocuronium', dosePerKg: 0.6, unit: 'mg', correct: true },
+  { id: 'ketamine', name: 'Ketamine', dosePerKg: 1.5, unit: 'mg', correct: false },
+  { id: 'midazolam', name: 'Midazolam', dosePerKg: 0.05, unit: 'mg', correct: false },
+  { id: 'thiopental', name: 'Thiopental', dosePerKg: 4, unit: 'mg', correct: false },
+  { id: 'morphine', name: 'Morphine', dosePerKg: 0.1, unit: 'mg', correct: false },
+  { id: 'etomidate', name: 'Etomidate', dosePerKg: 0.3, unit: 'mg', correct: false },
+  { id: 'atracurium', name: 'Atracurium', dosePerKg: 0.5, unit: 'mg', correct: false },
+  { id: 'succinylcholine', name: 'Succinylcholine', dosePerKg: 1.5, unit: 'mg', correct: false },
+  { id: 'dexmedetomidine', name: 'Dexmedetomidine', dosePerKg: 0.5, unit: 'mcg', correct: false },
+  { id: 'ondansetron', name: 'Ondansetron', dosePerKg: 0.1, unit: 'mg', correct: false },
+  { id: 'ephedrine', name: 'Ephedrine', dosePerKg: 0.1, unit: 'mg', correct: false },
+  { id: 'phenylephrine', name: 'Phenylephrine', dosePerKg: 1, unit: 'mcg', correct: false },
+  { id: 'glycopyrrolate', name: 'Glycopyrrolate', dosePerKg: 0.004, unit: 'mg', correct: false },
+  { id: 'lidocaine', name: 'Lidocaine', dosePerKg: 1.5, unit: 'mg', correct: false },
+  { id: 'atropine', name: 'Atropine', dosePerKg: 0.01, unit: 'mg', correct: false },
+];
+
+const AIRWAY_STEPS = [
+  'FACE_MASK',
+  'LARYNGOSCOPE',
+  'BLADE',
+  'ETT_SIZE',
+  'INTUBATION',
+  'INFLATE_CUFF',
+  'CONNECT_CIRCUIT',
+  'CAPNOGRAPHY'
+];
+
+// --- Components ---
+
+const Waveform = ({ color, type, active }: { color: string, type: 'ecg' | 'pleth' | 'co2', active: boolean }) => {
+  const [offset, setOffset] = useState(0);
+  
+  useEffect(() => {
+    if (!active) return;
+    const interval = setInterval(() => {
+      setOffset(prev => (prev + 2) % 200);
+    }, 30);
+    return () => clearInterval(interval);
+  }, [active]);
+
+  const getPath = () => {
+    if (type === 'ecg') {
+      return "M 0 25 L 20 25 L 25 10 L 30 40 L 35 25 L 50 25 L 55 5 L 60 45 L 65 25 L 80 25";
+    } else if (type === 'pleth') {
+      return "M 0 25 Q 15 5 30 25 T 60 25 T 90 25";
+    } else {
+      return "M 0 45 L 10 45 L 12 10 L 40 10 L 42 45 L 60 45";
+    }
+  };
+
+  return (
+    <svg viewBox="0 0 200 50" className="w-full h-12 overflow-hidden bg-black/20 rounded">
+      <path
+        d={`${getPath()} ${getPath()} ${getPath()}`}
+        fill="none"
+        stroke={active ? color : '#333'}
+        strokeWidth="1.5"
+        style={{ transform: `translateX(-${offset}px)`, transition: 'transform 0.03s linear' }}
+      />
+    </svg>
+  );
 };
 
-const preop = [
-  "Confirm identity",
-  "Confirm consent",
-  "Confirm procedure/site",
-  "Check allergies",
-  "Ask last oral intake",
-  "Review medications",
-  "Review PMH",
-  "Airway assessment",
-  "IV access",
-  "Equipment check",
-];
+export const Cases = () => {
+  // Simulation State
+  const [step, setStep] = useState<SimulationStep>('CHART');
+  const [vitals, setVitals] = useState<VitalSigns>({
+    hr: 72, spo2: 99, bpSys: 120, bpDia: 80, rr: 14, temp: 36.6, etco2: 0, fio2: 21, mac: 0, vt: 0, peep: 0
+  });
+  const [checklist, setChecklist] = useState({ id: false, consent: false, site: false, allergies: false, machine: false });
+  const [connected, setConnected] = useState({ ecg: false, spo2: false, bp: false, temp: false, co2: false });
+  const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [selectedDrug, setSelectedDrug] = useState<typeof DRUGS[0] | null>(null);
+  const [doseInput, setDoseInput] = useState('');
+  const [givenDrugs, setGivenDrugs] = useState<string[]>([]);
+  const [airwayStage, setAirwayStage] = useState(0);
+  const [isAsleep, setIsAsleep] = useState(false);
 
-const monitors = [
-  { id: "ecg", label: "ECG leads", value: "HR 82" },
-  { id: "spo2", label: "Pulse ox", value: "SpO₂ 99%" },
-  { id: "bp", label: "BP cuff", value: "BP 118/72" },
-  { id: "temp", label: "Temp probe", value: "36.8°C" },
-  { id: "capno", label: "Capnography", value: "Ready" },
-];
+  // Logic
+  const notify = (msg: string) => {
+    setFeedback(msg);
+    setTimeout(() => setFeedback(null), 3000);
+  };
 
-const drugs = [
-  { name: "Propofol", dose: "1.5–2.5 mg/kg", correct: true },
-  { name: "Fentanyl", dose: "1–2 mcg/kg", correct: true },
-  { name: "Rocuronium", dose: "0.6–1.2 mg/kg", correct: true },
-  { name: "Ketamine", dose: "Not first choice here", correct: false },
-  { name: "Midazolam", dose: "Not routine induction plan", correct: false },
-];
+  const handleMonitorClick = (type: keyof typeof connected) => {
+    setActiveTool(type);
+    notify(`Click patient to attach ${type.toUpperCase()}`);
+  };
 
-const airway = [
-  { name: "Face mask", correct: true },
-  { name: "Laryngoscope", correct: true },
-  { name: "ETT 7.0–7.5", correct: true },
-  { name: "Stylet", correct: true },
-  { name: "Suction", correct: true },
-  { name: "LMA only", correct: false },
-];
+  const handlePatientClick = (zone: string) => {
+    if (!activeTool) return;
+    
+    const validMap: Record<string, string> = { ecg: 'chest', spo2: 'hand', bp: 'arm', temp: 'axilla', co2: 'airway' };
+    
+    if (validMap[activeTool] === zone) {
+      setConnected(prev => ({ ...prev, [activeTool!]: true }));
+      setActiveTool(null);
+      notify(`${activeTool.toUpperCase()} connected successfully.`);
+    } else {
+      notify(`Incorrect placement for ${activeTool.toUpperCase()}.`);
+    }
+  };
 
-export const Route = createFileRoute("/cases")({
+  const validateDose = () => {
+    if (!selectedDrug) return;
+    const expected = selectedDrug.dosePerKg * PATIENT_WEIGHT;
+    const input = parseFloat(doseInput);
+    
+    if (Math.abs(input - expected) < 0.1) {
+      setGivenDrugs(prev => [...prev, selectedDrug.id]);
+      setSelectedDrug(null);
+      setDoseInput('');
+      notify(`Administered ${selectedDrug.name} correctly.`);
+      
+      if (givenDrugs.length + 1 === 3) {
+        setStep('AIRWAY');
+      }
+    } else {
+      notify(`Incorrect dose. Re-calculate based on ${PATIENT_WEIGHT}kg.`);
+    }
+  };
+
+  useEffect(() => {
+    if (isAsleep) {
+      setVitals(v => ({ ...v, hr: 65, bpSys: 105, bpDia: 65, etco2: 38, vt: 450, mac: 1.1, peep: 5, fio2: 50 }));
+    }
+  }, [isAsleep]);
+
+  return (
+    <div className="flex flex-col h-screen w-full bg-slate-900 text-slate-100 font-sans overflow-hidden">
+      {/* Header */}
+      <header className="h-14 border-b border-slate-700 bg-slate-800 flex items-center justify-between px-6 z-50 shadow-xl">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center animate-pulse">
+            <span className="text-white font-bold">H</span>
+          </div>
+          <h1 className="font-bold text-lg tracking-tight uppercase">OR-SIM High-Fidelity Anesthesia</h1>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="text-xs uppercase tracking-widest text-slate-400">Status: <span className="text-blue-400">{step}</span></div>
+          <div className="px-3 py-1 bg-slate-700 rounded text-sm font-mono">Patient: Male, 65kg, ASA II</div>
+        </div>
+      </header>
+
+      <main className="flex-1 relative flex overflow-hidden">
+        
+        {/* Left: OR Environment */}
+        <div className="flex-1 relative bg-slate-800 overflow-hidden">
+          {/* Wall/Floor Background */}
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-700 to-slate-900" />
+          <div className="absolute bottom-0 w-full h-1/3 bg-slate-950/30 -skew-y-1 origin-bottom-left" />
+          
+          {/* Lighting */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-20 bg-white/5 blur-3xl rounded-full" />
+
+          {/* Patient SVG */}
+          <div className="absolute inset-0 flex items-center justify-center pt-20">
+            <div className="relative w-[800px] h-[400px]">
+              {/* Floor Shadow */}
+              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-3/4 h-12 bg-black/40 blur-2xl rounded-full" />
+              
+              {/* Operating Table */}
+              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-4/5 h-6 bg-slate-400 rounded shadow-2xl border-b-4 border-slate-600" />
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-16 bg-slate-500 border-x-4 border-slate-600" />
+              
+              {/* The Patient */}
+              <svg viewBox="0 0 800 200" className="absolute bottom-20 left-1/2 -translate-x-1/2 w-full h-auto drop-shadow-2xl">
+                <path 
+                  d="M100,100 C100,60 140,40 180,40 C220,40 230,80 230,100 L700,100 L700,130 L100,130 Z" 
+                  fill={isAsleep ? "#94a3b8" : "#e2e8f0"} 
+                  className="transition-colors duration-2000"
+                />
+                {/* Head Details */}
+                <circle cx="160" cy="75" r="30" fill={isAsleep ? "#cbd5e1" : "#f1f5f9"} />
+                {/* Interaction Zones */}
+                <circle cx="160" cy="75" r="35" className="fill-transparent hover:fill-blue-400/20 cursor-pointer" onClick={() => handlePatientClick('airway')} />
+                <rect x="250" y="60" width="100" height="60" className="fill-transparent hover:fill-blue-400/20 cursor-pointer" onClick={() => handlePatientClick('chest')} />
+                <rect x="400" y="80" width="150" height="40" className="fill-transparent hover:fill-blue-400/20 cursor-pointer" onClick={() => handlePatientClick('arm')} />
+                <rect x="650" y="90" width="40" height="30" className="fill-transparent hover:fill-blue-400/20 cursor-pointer" onClick={() => handlePatientClick('hand')} />
+              </svg>
+
+              {/* Connections (Visual feedback) */}
+              {connected.ecg && <div className="absolute top-36 left-[300px] w-1 h-20 bg-green-500/50 shadow-[0_0_10px_green]" />}
+              {connected.spo2 && <div className="absolute top-44 left-[670px] w-1 h-16 bg-red-500/50 shadow-[0_0_10px_red]" />}
+              {connected.bp && <div className="absolute top-36 left-[450px] w-8 h-4 bg-blue-500/50 rounded" />}
+            </div>
+          </div>
+
+          {/* Anesthesia Machine Overlay */}
+          <div className="absolute left-4 bottom-4 w-64 h-96 bg-slate-800 border-2 border-slate-600 rounded-lg shadow-2xl flex flex-col p-3">
+             <div className="text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-tighter border-b border-slate-700 pb-1">Anesthesia Workstation</div>
+             <div className="flex-1 grid grid-cols-2 gap-2">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="bg-slate-900 rounded p-1 flex flex-col justify-center items-center border border-slate-700">
+                    <div className="w-8 h-8 rounded-full border-2 border-slate-600 flex items-center justify-center">
+                      <div className="w-1 h-4 bg-slate-400 origin-bottom transform rotate-45" />
+                    </div>
+                    <div className="text-[8px] mt-1 text-slate-500">DIAL {i+1}</div>
+                  </div>
+                ))}
+             </div>
+             <div className="mt-4 h-24 bg-blue-900/20 rounded border border-blue-500/30 flex items-center justify-center">
+                <div className={`w-12 h-12 rounded-full border-4 ${isAsleep ? 'border-green-500 animate-pulse' : 'border-slate-700'}`} />
+                <div className="ml-2 text-[10px] text-slate-300 italic">Bellows Active</div>
+             </div>
+          </div>
+        </div>
+
+        {/* Right: UI Panel */}
+        <div className="w-96 bg-slate-900 border-l border-slate-700 flex flex-col shadow-2xl z-20">
+          
+          {/* Vitals Monitor */}
+          <div className="h-1/2 bg-black p-4 flex flex-col gap-3">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs text-green-500 font-bold">MONITOR - LIVE</span>
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border border-green-900/50 p-2 rounded bg-green-900/10">
+                <div className="text-[10px] text-green-500">HR (bpm)</div>
+                <div className="text-3xl font-mono text-green-400 font-bold">{connected.ecg ? vitals.hr : '--'}</div>
+                <Waveform color="#4ade80" type="ecg" active={connected.ecg} />
+              </div>
+              <div className="border border-red-900/50 p-2 rounded bg-red-900/10">
+                <div className="text-[10px] text-red-500">SpO₂ (%)</div>
+                <div className="text-3xl font-mono text-red-400 font-bold">{connected.spo2 ? vitals.spo2 : '--'}</div>
+                <Waveform color="#f87171" type="pleth" active={connected.spo2} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                <div className="text-[8px] text-blue-400 uppercase">BP (mmHg)</div>
+                <div className="text-lg font-mono text-blue-300">{connected.bp ? `${vitals.bpSys}/${vitals.bpDia}` : '--/--'}</div>
+              </div>
+              <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                <div className="text-[8px] text-yellow-400 uppercase">EtCO₂</div>
+                <div className="text-lg font-mono text-yellow-300">{connected.co2 ? vitals.etco2 : '--'}</div>
+              </div>
+              <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                <div className="text-[8px] text-purple-400 uppercase">MAC</div>
+                <div className="text-lg font-mono text-purple-300">{vitals.mac.toFixed(1)}</div>
+              </div>
+            </div>
+
+            <div className="mt-auto">
+              <div className="text-[8px] text-yellow-500 mb-1">CAPNOGRAPHY</div>
+              <Waveform color="#facc15" type="co2" active={connected.co2 && isAsleep} />
+            </div>
+          </div>
+
+          {/* Workflow Controls */}
+          <div className="flex-1 p-4 overflow-y-auto custom-scrollbar">
+            {step === 'CHART' && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-bold border-b border-slate-700 pb-2">Pre-operative Chart</h2>
+                <div className="bg-slate-800 p-4 rounded text-sm space-y-2">
+                  <p><strong>Name:</strong> John Doe</p>
+                  <p><strong>Age:</strong> 45</p>
+                  <p><strong>Procedure:</strong> Laparoscopic Cholecystectomy</p>
+                  <p><strong>History:</strong> Hypertension, BMI 28</p>
+                  <p><strong>Meds:</strong> Lisinopril</p>
+                </div>
+                <button 
+                  onClick={() => setStep('CHECKLIST')}
+                  className="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold transition-all"
+                >
+                  START PRE-OP CHECKLIST
+                </button>
+              </div>
+            )}
+
+            {step === 'CHECKLIST' && (
+              <div className="space-y-3">
+                <h2 className="text-lg font-bold border-b border-slate-700 pb-2">Surgical Safety Checklist</h2>
+                {Object.keys(checklist).map((key) => (
+                  <label key={key} className="flex items-center gap-3 p-3 bg-slate-800 rounded cursor-pointer hover:bg-slate-700 border border-slate-700">
+                    <input 
+                      type="checkbox" 
+                      className="w-5 h-5 accent-blue-500" 
+                      onChange={() => setChecklist(prev => ({ ...prev, [key]: !prev[key as keyof typeof checklist] }))}
+                    />
+                    <span className="capitalize">{key.replace(/([A-Z])/g, ' $1')} Verified</span>
+                  </label>
+                ))}
+                <button 
+                  disabled={!Object.values(checklist).every(v => v)}
+                  onClick={() => setStep('MONITORS')}
+                  className="w-full bg-blue-600 disabled:bg-slate-700 hover:bg-blue-700 py-3 rounded font-bold transition-all mt-4"
+                >
+                  PROCEED TO MONITORING
+                </button>
+              </div>
+            )}
+
+            {step === 'MONITORS' && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-bold border-b border-slate-700 pb-2">Attach Monitors</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  {(['ecg', 'spo2', 'bp', 'temp'] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => handleMonitorClick(m)}
+                      className={`p-4 rounded border-2 flex flex-col items-center gap-2 transition-all ${connected[m] ? 'border-green-500 bg-green-500/10' : activeTool === m ? 'border-blue-500 bg-blue-500/20' : 'border-slate-700 bg-slate-800'}`}
+                    >
+                      <div className="w-8 h-8 rounded bg-slate-600 flex items-center justify-center text-xs font-bold">{m.toUpperCase()}</div>
+                      <span className="text-[10px]">{connected[m] ? 'Connected' : 'Available'}</span>
+                    </button>
+                  ))}
+                </div>
+                <button 
+                  disabled={!connected.ecg || !connected.spo2 || !connected.bp}
+                  onClick={() => setStep('INDUCTION')}
+                  className="w-full bg-blue-600 disabled:bg-slate-700 hover:bg-blue-700 py-3 rounded font-bold transition-all mt-4"
+                >
+                  PROCEED TO INDUCTION
+                </button>
+              </div>
+            )}
+
+            {step === 'INDUCTION' && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-bold border-b border-slate-700 pb-2">Drug Administration</h2>
+                <p className="text-[10px] text-slate-400 bg-slate-800 p-2 rounded">Select correct induction drugs and calculate dosage for 65kg patient.</p>
+                
+                <div className="grid grid-cols-2 gap-2 overflow-y-auto max-h-60 p-1">
+                  {DRUGS.map(drug => (
+                    <button
+                      key={drug.id}
+                      disabled={givenDrugs.includes(drug.id)}
+                      onClick={() => {
+                        if (!drug.correct) return notify(`Error: ${drug.name} is not standard for this induction sequence.`);
+                        setSelectedDrug(drug);
+                      }}
+                      className={`text-[10px] p-2 rounded border transition-all ${givenDrugs.includes(drug.id) ? 'bg-green-900 border-green-500 opacity-50' : 'bg-slate-800 border-slate-700 hover:border-blue-500'}`}
+                    >
+                      {drug.name}
+                    </button>
+                  ))}
+                </div>
+
+                {selectedDrug && (
+                  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-6">
+                    <div className="bg-slate-800 p-6 rounded-xl border border-slate-600 w-full max-w-sm shadow-2xl">
+                      <h3 className="text-xl font-bold mb-2">Calculate Dose</h3>
+                      <p className="text-sm text-slate-300 mb-4">Drug: <span className="text-blue-400 font-bold">{selectedDrug.name}</span></p>
+                      <p className="text-xs mb-4 text-slate-400">Standard dose: {selectedDrug.dosePerKg}{selectedDrug.unit}/kg. Patient: {PATIENT_WEIGHT}kg.</p>
+                      <div className="flex gap-2">
+                        <input 
+                          type="number" 
+                          value={doseInput}
+                          onChange={(e) => setDoseInput(e.target.value)}
+                          placeholder={`Total ${selectedDrug.unit}...`}
+                          className="flex-1 bg-slate-900 border border-slate-700 p-3 rounded text-white"
+                        />
+                        <button onClick={validateDose} className="bg-blue-600 px-6 rounded font-bold">GIVE</button>
+                      </div>
+                      <button onClick={() => setSelectedDrug(null)} className="mt-4 text-slate-500 text-xs hover:underline">Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {step === 'AIRWAY' && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-bold border-b border-slate-700 pb-2">Airway Management</h2>
+                <div className="flex flex-col gap-2">
+                  {AIRWAY_STEPS.map((s, idx) => {
+                    const isAvailable = airwayStage === idx;
+                    const isDone = airwayStage > idx;
+                    return (
+                      <div 
+                        key={s} 
+                        className={`p-3 rounded border text-xs flex justify-between items-center transition-all ${isDone ? 'bg-green-900/20 border-green-700 text-green-400' : isAvailable ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-800 border-slate-700 text-slate-500'}`}
+                        onClick={() => {
+                          if (isAvailable) {
+                            if (s === 'CAPNOGRAPHY') {
+                               setConnected(prev => ({...prev, co2: true}));
+                               setAirwayStage(idx + 1);
+                               setIsAsleep(true);
+                               setStep('MAINTENANCE');
+                            } else {
+                               setAirwayStage(idx + 1);
+                            }
+                          }
+                        }}
+                      >
+                        <span>{s.replace(/_/g, ' ')}</span>
+                        {isDone && <span>✓</span>}
+                        {isAvailable && <span className="animate-pulse">Select...</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {step === 'MAINTENANCE' && (
+              <div className="space-y-4">
+                <div className="bg-green-600/20 border border-green-500 p-4 rounded text-green-400 text-sm">
+                  <strong>Induction Successful</strong>
+                  <p className="text-[10px] mt-1">The patient is now under general anesthesia. Monitor vitals and maintain depth.</p>
+                </div>
+                <div className="bg-slate-800 p-4 rounded space-y-4">
+                   <div className="flex justify-between text-xs">
+                      <span>Isoflurane Vaporizer</span>
+                      <span className="text-blue-400 font-bold">1.2%</span>
+                   </div>
+                   <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
+                      <div className="bg-blue-500 h-full w-[60%]" />
+                   </div>
+                   <div className="flex justify-between text-xs">
+                      <span>Oxygen Flow</span>
+                      <span className="text-green-400 font-bold">2.0 L/min</span>
+                   </div>
+                </div>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="w-full border border-slate-700 hover:bg-slate-800 py-3 rounded font-bold transition-all mt-4 text-xs"
+                >
+                  RESET SIMULATION
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+
+      {/* Floating Feedback */}
+      {feedback && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 bg-red-600 text-white font-bold rounded-full shadow-2xl z-[200] animate-bounce">
+          {feedback}
+        </div>
+      )}
+
+      {/* Overlay for specific step tooltips */}
+      {activeTool && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 px-4 py-2 bg-blue-600 rounded text-sm font-bold animate-pulse z-40 pointer-events-none">
+          Placing {activeTool.toUpperCase()}...
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Route Export
+export const Route = createFileRoute('/cases')({
   component: Cases,
 });
 
-function Cases() {
-  const [step, setStep] = useState<Step>("brief");
-  const [chart, setChart] = useState(false);
-  const [selectedPreop, setSelectedPreop] = useState<string[]>([]);
-  const [connected, setConnected] = useState<string[]>([]);
-  const [selectedDrugs, setSelectedDrugs] = useState<string[]>([]);
-  const [selectedAirway, setSelectedAirway] = useState<string[]>([]);
-  const [msg, setMsg] = useState("Open the patient chart, then start the OR simulation.");
-  const [tube, setTube] = useState(false);
-  const [drugDrawer, setDrugDrawer] = useState(false);
-  const [airwayDrawer, setAirwayDrawer] = useState(false);
-
-  const expectedDrugs = ["Propofol", "Fentanyl", "Rocuronium"];
-
-  const preopDone = selectedPreop.length >= 8;
-  const monitoringDone = ["ecg", "spo2", "bp", "temp"].every((x) => connected.includes(x));
-  const drugsDone = expectedDrugs.every((x) => selectedDrugs.includes(x));
-  const airwayDone = ["Face mask", "Laryngoscope", "ETT 7.0–7.5", "Suction"].every((x) =>
-    selectedAirway.includes(x)
-  );
-
-  const vitals = useMemo(() => {
-    return {
-      hr: connected.includes("ecg") ? "82" : "--",
-      spo2: connected.includes("spo2") ? "99%" : "--",
-      bp: connected.includes("bp") ? "118/72" : "--/--",
-      temp: connected.includes("temp") ? "36.8" : "--",
-      etco2: tube ? "36" : "--",
-    };
-  }, [connected, tube]);
-
-  function wrong(text: string) {
-    setMsg(`❌ Incorrect. ${text}`);
-  }
-
-  function connectMonitor(id: string, label: string) {
-    if (step !== "monitoring") {
-      wrong("Start the monitoring step before connecting equipment.");
-      return;
-    }
-
-    if (!connected.includes(id)) {
-      setConnected([...connected, id]);
-      setMsg(`✅ ${label} connected. Monitor updated.`);
-    }
-  }
-
-  function chooseDrug(name: string, correct: boolean) {
-    if (step !== "drugs") {
-      wrong("Complete basic monitoring before choosing induction drugs.");
-      return;
-    }
-
-    const nextDrug = expectedDrugs[selectedDrugs.length];
-
-    if (!correct || name !== nextDrug) {
-      wrong(`Choose the next appropriate induction drug. Expected sequence: hypnotic → opioid → neuromuscular blocker.`);
-      return;
-    }
-
-    if (!selectedDrugs.includes(name)) {
-      setSelectedDrugs([...selectedDrugs, name]);
-      setMsg(`✅ ${name} selected correctly.`);
-    }
-  }
-
-  function chooseAirway(name: string, correct: boolean) {
-    if (step !== "airway") {
-      wrong("Induction drugs should be selected before preparing the airway.");
-      return;
-    }
-
-    if (!correct) {
-      wrong("LMA alone is not the primary airway plan for this laparoscopic intubated case.");
-      return;
-    }
-
-    if (!selectedAirway.includes(name)) {
-      setSelectedAirway([...selectedAirway, name]);
-      setMsg(`✅ ${name} prepared.`);
-    }
-  }
-
-  function next() {
-    if (step === "brief") {
-      setStep("preop");
-      setMsg("Complete the essential pre-op checks.");
-      return;
-    }
-
-    if (step === "preop") {
-      if (!preopDone) {
-        wrong("Complete at least 8 essential pre-op checks first.");
-        return;
-      }
-      setStep("monitoring");
-      setMsg("Now connect ASA basic monitors directly on the OR scene.");
-      return;
-    }
-
-    if (step === "monitoring") {
-      if (!monitoringDone) {
-        wrong("ECG, pulse ox, BP cuff, and temperature probe are required before induction.");
-        return;
-      }
-      setStep("drugs");
-      setMsg("Monitoring complete. Open the drug tray and choose the induction drugs in order.");
-      return;
-    }
-
-    if (step === "drugs") {
-      if (!drugsDone) {
-        wrong("Choose Propofol, Fentanyl, and Rocuronium in the correct order.");
-        return;
-      }
-      setStep("airway");
-      setMsg("Drug plan complete. Open the airway cart and prepare intubation equipment.");
-      return;
-    }
-
-    if (step === "airway") {
-      if (!airwayDone) {
-        wrong("Prepare face mask, laryngoscope, ETT, and suction before intubation.");
-        return;
-      }
-      setTube(true);
-      setStep("machine");
-      setMsg("✅ ETT placed. Continuous waveform EtCO₂ appears.");
-      return;
-    }
-
-    if (step === "machine") {
-      setStep("done");
-      setMsg("Simulation completed.");
-    }
-  }
-
-  return (
-    <main className="min-h-screen bg-[#05070d] text-slate-100 p-6 md:p-10">
-      <section className="flex items-start justify-between gap-4 mb-8">
-        <div>
-          <p className="text-cyan-400 text-xs tracking-[0.25em] uppercase">Virtual Operating Room</p>
-          <h1 className="text-4xl md:text-6xl font-black mt-2">OR Simulator</h1>
-          <p className="text-slate-400 mt-3 max-w-3xl">
-            A 27-year-old female presents for elective laparoscopic cholecystectomy under general anesthesia.
-          </p>
-        </div>
-
-        <button
-          onClick={() => setChart(true)}
-          className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 font-bold hover:border-cyan-400"
-        >
-          ℹ Patient Chart
-        </button>
-      </section>
-
-      <section className="grid md:grid-cols-6 gap-3 mb-6">
-        {["brief", "preop", "monitoring", "drugs", "airway", "machine"].map((x) => (
-          <div
-            key={x}
-            className={`rounded-2xl p-3 border capitalize ${
-              x === step ? "border-cyan-400 bg-cyan-400/10" : "border-slate-800 bg-slate-900/60"
-            }`}
-          >
-            {x}
-          </div>
-        ))}
-      </section>
-
-      <section className="rounded-[2rem] border border-slate-800 bg-slate-950/80 p-5 mb-6">
-        <h2 className="text-xl font-black mb-2">Pre-op essentials</h2>
-        <p className="text-slate-400">
-          Confirm patient identity, consent, allergies, medications, comorbidities, last oral intake,
-          airway assessment, IV access, baseline vitals, and equipment readiness.
-        </p>
-
-        <div className="grid md:grid-cols-5 gap-3 mt-4 text-sm">
-          <div className="rounded-xl bg-slate-900 p-3">Clear fluids: <b>2 h</b></div>
-          <div className="rounded-xl bg-slate-900 p-3">Breast milk: <b>4 h</b></div>
-          <div className="rounded-xl bg-slate-900 p-3">Formula/milk: <b>6 h</b></div>
-          <div className="rounded-xl bg-slate-900 p-3">Light meal: <b>6 h</b></div>
-          <div className="rounded-xl bg-slate-900 p-3">Fatty meal: <b>8 h</b></div>
-        </div>
-      </section>
-
-      <section className="relative min-h-[760px] rounded-[2rem] border border-slate-800 overflow-hidden mb-6 bg-[#07111f]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,211,238,.16),transparent_45%)]" />
-        <div className="absolute inset-x-0 top-0 h-24 bg-slate-700/30" />
-        <div className="absolute inset-x-0 bottom-0 h-32 bg-slate-800/50" />
-
-        <div className="absolute left-1/2 top-10 -translate-x-1/2">
-          <div className="mx-auto w-24 h-8 rounded-full bg-slate-400" />
-          <div className="mt-2 grid grid-cols-4 gap-2 bg-slate-300/20 rounded-full p-3 border border-white/20">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="w-8 h-5 rounded-full bg-yellow-100 shadow-[0_0_25px_rgba(254,249,195,.8)]" />
-            ))}
-          </div>
-        </div>
-
-        <div className="absolute left-6 top-6 w-[320px] rounded-3xl border border-cyan-500/60 bg-black/85 p-5 shadow-[0_0_30px_rgba(34,211,238,.15)]">
-          <h3 className="font-black mb-3">Patient Monitor</h3>
-          <div className="h-12 rounded-xl bg-black border border-emerald-400/30 mb-4 overflow-hidden">
-            <div className="h-full bg-[repeating-linear-gradient(90deg,#22c55e_0_7px,transparent_7px_20px)] opacity-80" />
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono">
-            <span>HR {vitals.hr}</span>
-            <span>SpO₂ {vitals.spo2}</span>
-            <span>BP {vitals.bp}</span>
-            <span>Temp {vitals.temp}</span>
-            <span>EtCO₂ {vitals.etco2}</span>
-          </div>
-        </div>
-
-        <div className="absolute right-6 top-6 w-[330px] rounded-3xl border border-violet-500/60 bg-black/85 p-5 shadow-[0_0_30px_rgba(139,92,246,.15)]">
-          <h3 className="font-black mb-3">Anesthesia Machine</h3>
-          <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono text-sm">
-            <span>FiO₂ 50%</span>
-            <span>Sevo --</span>
-            <span>MAC --</span>
-            <span>VT 480</span>
-            <span>RR 12</span>
-            <span>PEEP 5</span>
-          </div>
-          <div className="mt-4 h-24 rounded-2xl bg-slate-800 border border-slate-600" />
-        </div>
-
-        <div className="absolute left-1/2 top-[55%] -translate-x-1/2 -translate-y-1/2">
-          <div className="relative w-[460px] h-[390px]">
-            <div className="absolute left-1/2 bottom-0 -translate-x-1/2 w-[430px] h-28 rounded-[2rem] bg-slate-600 shadow-2xl" />
-            <div className="absolute left-1/2 bottom-16 -translate-x-1/2 w-[360px] h-24 rounded-[2rem] bg-slate-700" />
-            <div className="absolute left-1/2 top-4 -translate-x-1/2 w-20 h-20 rounded-full bg-[#f2c49f] shadow-lg" />
-            <div className="absolute left-1/2 top-24 -translate-x-1/2 w-44 h-56 rounded-[45%] bg-gradient-to-b from-blue-100 to-blue-800 shadow-xl" />
-            <div className="absolute left-[98px] top-112 w-16 h-36 rounded-full bg-blue-100 rotate-12" />
-            <div className="absolute right-[98px] top-112 w-16 h-36 rounded-full bg-blue-100 -rotate-12" />
-
-            <button
-              onClick={() => connectMonitor("ecg", "ECG leads")}
-              className={`absolute left-[185px] top-[150px] w-20 h-12 rounded-full border text-xs ${
-                connected.includes("ecg") ? "border-emerald-300 bg-emerald-400/30" : "border-white/40 bg-white/10"
-              }`}
-            >
-              ECG
-            </button>
-
-            <button
-              onClick={() => connectMonitor("spo2", "Pulse oximeter")}
-              className={`absolute right-[85px] top-[210px] w-16 h-10 rounded-full border text-xs ${
-                connected.includes("spo2") ? "border-emerald-300 bg-emerald-400/30" : "border-white/40 bg-white/10"
-              }`}
-            >
-              SpO₂
-            </button>
-
-            <button
-              onClick={() => connectMonitor("bp", "BP cuff")}
-              className={`absolute left-[65px] top-[205px] w-20 h-12 rounded-xl border text-xs ${
-                connected.includes("bp") ? "border-emerald-300 bg-emerald-400/30" : "border-white/40 bg-white/10"
-              }`}
-            >
-              BP
-            </button>
-
-            <button
-              onClick={() => connectMonitor("temp", "Temperature probe")}
-              className={`absolute left-[190px] top-[250px] w-20 h-10 rounded-full border text-xs ${
-                connected.includes("temp") ? "border-emerald-300 bg-emerald-400/30" : "border-white/40 bg-white/10"
-              }`}
-            >
-              Temp
-            </button>
-          </div>
-        </div>
-
-        <button
-          onClick={() => {
-            if (step !== "drugs") {
-              wrong("Complete monitoring first, then open the drug tray.");
-              return;
-            }
-            setDrugDrawer(true);
-          }}
-          className="absolute bottom-8 left-8 rounded-2xl border border-blue-500/60 bg-slate-900 px-5 py-3 font-bold hover:border-cyan-300"
-        >
-          💉 Drug tray
-        </button>
-
-        <button
-          onClick={() => {
-            if (step !== "airway") {
-              wrong("Choose induction drugs before opening the airway cart.");
-              return;
-            }
-            setAirwayDrawer(true);
-          }}
-          className="absolute bottom-8 right-8 rounded-2xl border border-emerald-500/60 bg-slate-900 px-5 py-3 font-bold hover:border-emerald-300"
-        >
-          🫁 Airway cart
-        </button>
-
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[min(560px,80vw)] rounded-2xl border border-slate-700 bg-black/75 p-4">
-          <p className={msg.startsWith("❌") ? "text-red-300" : "text-emerald-300"}>{msg}</p>
-        </div>
-
-        {drugDrawer && (
-          <div className="absolute right-0 top-0 h-full w-[min(430px,92vw)] bg-slate-950/95 border-l border-slate-700 p-6 z-40">
-            <button onClick={() => setDrugDrawer(false)} className="float-right text-3xl">×</button>
-            <h2 className="text-2xl font-black mb-4">Drug Tray</h2>
-            <p className="text-slate-400 mb-4">Choose the induction drugs in correct order.</p>
-            <div className="grid gap-3">
-              {drugs.map((d) => (
-                <button
-                  key={d.name}
-                  onClick={() => chooseDrug(d.name, d.correct)}
-                  className={`rounded-2xl border p-4 text-left ${
-                    selectedDrugs.includes(d.name)
-                      ? "border-emerald-400 bg-emerald-400/10"
-                      : "border-slate-700 bg-slate-900"
-                  }`}
-                >
-                  <b>💉 {d.name}</b>
-                  <br />
-                  <small>{d.dose}</small>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {airwayDrawer && (
-          <div className="absolute right-0 top-0 h-full w-[min(430px,92vw)] bg-slate-950/95 border-l border-slate-700 p-6 z-40">
-            <button onClick={() => setAirwayDrawer(false)} className="float-right text-3xl">×</button>
-            <h2 className="text-2xl font-black mb-4">Airway Cart</h2>
-            <div className="grid gap-3">
-              {airway.map((a) => (
-                <button
-                  key={a.name}
-                  onClick={() => chooseAirway(a.name, a.correct)}
-                  className={`rounded-2xl border p-4 text-left ${
-                    selectedAirway.includes(a.name)
-                      ? "border-emerald-400 bg-emerald-400/10"
-                      : "border-slate-700 bg-slate-900"
-                  }`}
-                >
-                  {a.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-[2rem] border border-slate-800 bg-slate-950/80 p-5">
-        <h2 className="text-2xl font-black mb-3">
-          {step === "brief" && "Case Brief"}
-          {step === "preop" && "Step 1 — Pre-op check"}
-          {step === "monitoring" && "Step 2 — Connect monitors"}
-          {step === "drugs" && "Step 3 — Choose induction plan"}
-          {step === "airway" && "Step 4 — Prepare airway"}
-          {step === "machine" && "Step 5 — Machine setup"}
-          {step === "done" && "Debrief"}
-        </h2>
-
-        {step === "brief" && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-            You are the anesthesia student in the OR. Start by reviewing patient information.
-          </div>
-        )}
-
-        {step === "preop" && (
-          <div className="grid md:grid-cols-3 gap-3">
-            {preop.map((x) => (
-              <button
-                key={x}
-                onClick={() => {
-                  if (!selectedPreop.includes(x)) setSelectedPreop([...selectedPreop, x]);
-                  setMsg("✅ Good. Continue completing the pre-op checklist.");
-                }}
-                className={`rounded-2xl border p-4 text-left ${
-                  selectedPreop.includes(x)
-                    ? "border-emerald-400 bg-emerald-400/10"
-                    : "border-slate-700 bg-slate-900"
-                }`}
-              >
-                {x}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {step === "machine" && (
-          <div className="rounded-2xl border border-emerald-400 bg-emerald-400/10 p-5">
-            ✅ Safe induction completed. ETT confirmed with waveform capnography. Initial ventilator settings:
-            VT 6–8 mL/kg, RR 10–14/min, PEEP 5, FiO₂ adjusted to oxygenation.
-          </div>
-        )}
-
-        {step === "done" && (
-          <div className="rounded-2xl border border-cyan-400 bg-cyan-400/10 p-5">
-            Score: Excellent. You completed pre-op assessment, ASA monitoring, induction plan, airway
-            preparation, and post-intubation confirmation.
-          </div>
-        )}
-
-        <button
-          onClick={next}
-          className="mt-5 rounded-2xl bg-gradient-to-r from-cyan-400 to-indigo-400 text-slate-950 font-black px-6 py-3"
-        >
-          Continue
-        </button>
-      </section>
-
-      {chart && (
-        <aside className="fixed top-0 right-0 h-screen w-[min(430px,92vw)] bg-slate-950 border-l border-slate-700 p-6 z-50">
-          <button onClick={() => setChart(false)} className="float-right text-3xl">×</button>
-          <h2 className="text-2xl font-black mb-5">Patient Chart</h2>
-          {Object.entries(patient).map(([k, v]) => (
-            <div key={k} className="border-b border-slate-800 py-3">
-              <b className="capitalize text-cyan-300">{k}</b>
-              <p className="text-slate-300">{v}</p>
-            </div>
-          ))}
-        </aside>
-      )}
-
-      <footer className="mt-8 border-t border-slate-800 pt-4 text-slate-400 text-sm">
-        References: ASA Practice Guidelines for Preoperative Fasting; ASA Standards for Basic Anesthetic
-        Monitoring; Morgan & Mikhail’s Clinical Anesthesiology; OpenAnesthesia.
-      </footer>
-    </main>
-  );
-}
+export default Cases;
