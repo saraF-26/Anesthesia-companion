@@ -164,6 +164,63 @@ function Cases() {
         </div>
       </section>
 
+<section className="relative min-h-[560px] rounded-[2rem] border border-slate-800 bg-slate-950/80 overflow-hidden mb-6">
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,211,238,.12),transparent_45%)]" />
+
+  <div className="absolute left-6 top-6 w-[300px] rounded-3xl border border-cyan-500/60 bg-black/80 p-5">
+    <h3 className="font-black mb-3">Patient Monitor</h3>
+    <div className="h-12 rounded-xl bg-[repeating-linear-gradient(90deg,#22c55e_0_8px,transparent_8px_18px)] mb-4" />
+    <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono">
+      <span>HR {vitals.hr}</span>
+      <span>SpO₂ {vitals.spo2}</span>
+      <span>BP {vitals.bp}</span>
+      <span>EtCO₂ {vitals.etco2}</span>
+    </div>
+  </div>
+
+  <div className="absolute right-6 top-6 w-[310px] rounded-3xl border border-violet-500/60 bg-black/80 p-5">
+    <h3 className="font-black mb-3">Anesthesia Machine</h3>
+    <div className="grid grid-cols-2 gap-2 text-cyan-300 font-mono text-sm">
+      <span>FiO₂ 50%</span>
+      <span>Sevo --</span>
+      <span>MAC --</span>
+      <span>VT 480</span>
+      <span>RR 12</span>
+      <span>PEEP 5</span>
+    </div>
+  </div>
+
+  <div className="absolute left-1/2 top-[48%] -translate-x-1/2 -translate-y-1/2 text-center">
+    <div className="text-6xl mb-2">✦</div>
+    <div className="mx-auto w-16 h-16 rounded-full bg-[#f2c49f]" />
+    <div className="mx-auto mt-2 w-36 h-48 rounded-full bg-gradient-to-b from-blue-200 to-blue-800" />
+    <div className="mt-[-25px] w-[330px] h-20 rounded-[2rem] bg-slate-700" />
+  </div>
+
+  <div className="absolute bottom-6 left-6 grid grid-cols-2 gap-3">
+    {monitors.map((m) => (
+      <button
+        key={m.id}
+        onClick={() => {
+          if (!connected.includes(m.id)) setConnected([...connected, m.id]);
+          setMsg(`${m.label} connected.`);
+        }}
+        className={`rounded-2xl border px-4 py-3 text-left ${
+          connected.includes(m.id)
+            ? "border-emerald-400 bg-emerald-400/10"
+            : "border-slate-700 bg-slate-900"
+        }`}
+      >
+        {m.label}
+      </button>
+    ))}
+  </div>
+
+  <button className="absolute bottom-6 right-6 rounded-2xl border border-blue-500/50 bg-slate-900 px-5 py-3">
+    💉 Drug tray
+  </button>
+</section>
+
       <section className="rounded-[2rem] border border-slate-800 bg-slate-950/80 p-5">
         <h2 className="text-2xl font-black mb-3">
           {step === "brief" && "Case Brief"}
