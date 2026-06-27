@@ -164,9 +164,6 @@ function Cases() {
         </div>
       </section>
 
-      </section>
-
-
       <section className="rounded-[2rem] border border-slate-800 bg-slate-950/80 p-5">
         <h2 className="text-2xl font-black mb-3">
           {step === "brief" && "Case Brief"}
